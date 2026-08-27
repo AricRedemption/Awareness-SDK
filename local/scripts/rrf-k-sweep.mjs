@@ -67,7 +67,7 @@ function startDaemon(k) {
     env: { ...process.env, AWARENESS_RRF_K: String(k), DEBUG: '' },
     cwd: scratch,
     detached: true,
-    stdio: ['ignore', fs.openSync(`/tmp/rrf-daemon-${k}.log`, 'w'), fs.openSync(`/tmp/rrf-daemon-${k}.log`, 'a')],
+    stdio: ['ignore', fs.openSync(`/tmp/rrf-daemon-${k}.log`, 'w'), fs.openSync(`/tmp/rrf-daemon-${k}.log`, 'a')], windowsHide: true,
   });
   proc.unref();
   return scratch;
@@ -105,7 +105,7 @@ async function main() {
   spawn('node', [DAEMON_BIN, 'start'], {
     cwd: openclaw,
     detached: true,
-    stdio: 'ignore',
+    stdio: 'ignore', windowsHide: true,
   }).unref();
 }
 

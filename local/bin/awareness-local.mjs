@@ -236,10 +236,20 @@ async function cmdStart(flags) {
 
   // Record workspace usage (memoryId/lastUsed/name). Port is no longer
   // allocated per-workspace — every workspace shares the default daemon port.
-  try {
-    const { registerWorkspace } = await import('../src/core/config.mjs');
-    registerWorkspace(projectDir, { port });
-  } catch { /* best-effort */ }
+  //
+  // Deliberately NOT called yet. This used to run before the probe below, and
+  // saveWorkspaces() is a synchronous writeFileSync+rename — fully durable
+  // before it returns. So every `start` that immediately exited (already
+  // running, hot-switch, or a failed switch) had still permanently registered
+  // the directory. That is how registries reached thousands of entries: one
+  // throwaway `start` against a temp dir left a row forever. Register only on
+  // the paths where the workspace genuinely becomes active.
+  const recordWorkspace = async () => {
+    try {
+      const { registerWorkspace } = await import('../src/core/config.mjs');
+      registerWorkspace(projectDir, { port });
+    } catch { /* best-effort */ }
+  };
 
   // Single-daemon policy: if an Awareness daemon already runs on this port,
   // switch its active workspace instead of spawning a duplicate on a new port.
@@ -247,9 +257,14 @@ async function cmdStart(flags) {
   if (existing) {
     const existingDir = existing.project_dir ? path.resolve(existing.project_dir) : '';
     if (existingDir === path.resolve(projectDir)) {
+      // Already serving this project — it is genuinely active, so record it.
+      await recordWorkspace();
       console.log(
         `Awareness Local daemon already running (PID ${existing.pid}, port ${port})`
       );
+      // The "already running" branch used to end here. Users who ran `start`
+      // expecting to be told where the UI is got a dead end instead.
+      console.log(`  Dashboard:    http://localhost:${port}/`);
       process.exit(0);
     }
     // Different project on same port → hot-switch.
@@ -257,11 +272,16 @@ async function cmdStart(flags) {
       project_dir: projectDir,
     });
     if (switchRes && switchRes.status === 200) {
+      // The switch succeeded, so this workspace is now the active one.
+      await recordWorkspace();
       console.log(
         `Switched daemon workspace to ${projectDir} (PID ${existing.pid}, port ${port})`
       );
       process.exit(0);
     }
+    // Switch failed — the daemon is serving someone else and we are exiting
+    // with an error. Registering here would leave a row for a workspace that
+    // never became active.
     console.error(
       `[awareness-local] Port ${port} is held by another process but workspace switch failed:\n` +
       `  ${switchRes ? `HTTP ${switchRes.status}: ${switchRes.body.slice(0, 200)}` : 'no response'}\n` +
@@ -269,6 +289,11 @@ async function cmdStart(flags) {
     );
     process.exit(1);
   }
+
+  // No daemon on this port — we are about to become it, so this workspace is
+  // genuinely active. Register before starting so the entry exists even if the
+  // daemon later crashes (the registry is how the UI lists known projects).
+  await recordWorkspace();
 
   if (foreground) {
     // Run in foreground — import daemon and start
@@ -375,6 +400,9 @@ async function cmdStart(flags) {
         detached: true,
         stdio: ['ignore', logFd, logFd],
         cwd: projectDir,
+        // Without this Windows flashes a console window on every daemon start.
+        // Output already goes to the log file, so nothing becomes less visible.
+        windowsHide: true,
         env: { ...process.env },
       }
     );
@@ -416,9 +444,9 @@ async function cmdStart(flags) {
           fs.writeFileSync(firstRunFlag, new Date().toISOString());
           const url = `http://localhost:${port}/`;
           const { exec } = await import('node:child_process');
-          if (process.platform === 'darwin') exec(`open "${url}"`);
-          else if (process.platform === 'linux') exec(`xdg-open "${url}"`);
-          else if (process.platform === 'win32') exec(`start "" "${url}"`);
+          if (process.platform === 'darwin') exec(`open "${url}"`, { windowsHide: true });
+          else if (process.platform === 'linux') exec(`xdg-open "${url}"`, { windowsHide: true });
+          else if (process.platform === 'win32') exec(`start "" "${url}"`, { windowsHide: true });
         } catch { /* ignore open failures */ }
       }
     } else {
@@ -494,7 +522,11 @@ async function cmdStatus(flags) {
       const pidPath = path.join(projectDir, AWARENESS_DIR, PID_FILENAME);
       try { fs.unlinkSync(pidPath); } catch { /* ignore */ }
     }
-    process.exit(0);
+    // Exit non-zero: "not running" is not success. This used to exit 0, so any
+    // script gating on `awareness-local status` — a health check, a CI step, a
+    // wrapper that starts the daemon only if needed — read a dead daemon as a
+    // healthy one and carried on.
+    process.exit(1);
   }
 
   // Fetch health info
@@ -517,13 +549,30 @@ async function cmdStatus(flags) {
     console.log(`  Uptime:          ${uptimeStr}`);
     console.log(`  Project:         ${data.project_dir || projectDir}`);
 
+    // Surface a degraded index prominently. `status` used to print
+    // "Memories: 0" for a completely dead index, which reads exactly like a
+    // fresh workspace — the single most misleading line in this tool.
+    const indexerBroken = data.indexer && data.indexer.ok === false;
+    if (indexerBroken) {
+      console.log('');
+      console.log('  !! INDEX UNAVAILABLE — nothing is being indexed or recalled.');
+      console.log(`     Reason: ${data.indexer.reason || 'unknown'}`);
+      console.log('     The counts below are meaningless while this is broken.');
+      console.log('');
+    }
+
     if (data.stats) {
       const s = data.stats;
-      console.log(`  Memories:        ${s.totalMemories || 0}`);
+      console.log(`  Memories:        ${s.totalMemories || 0}${indexerBroken ? '  (index dead)' : ''}`);
       console.log(`  Knowledge Cards: ${s.totalKnowledge || 0}`);
       console.log(`  Open Tasks:      ${s.totalTasks || 0}`);
       console.log(`  Sessions:        ${s.totalSessions || 0}`);
     }
+
+    // /healthz already reported these; status was discarding them.
+    console.log(`  Search Mode:     ${data.search_mode || 'unknown'}`);
+    console.log(`  Embeddings:      ${data.embedding?.available ? 'available' : 'unavailable (FTS only)'}`);
+    console.log(`  Dashboard:       ${data.ui_url || `http://localhost:${port}/`}`);
 
     // Check cloud sync status
     const awarenessDir = path.join(projectDir, AWARENESS_DIR);
@@ -545,6 +594,45 @@ async function cmdStatus(flags) {
   } catch {
     console.log(`Awareness Local: running (PID ${pid})`);
     console.log(`  Raw response: ${resp.body}`);
+  }
+}
+
+/**
+ * Print the Web UI URL and open it in the default browser.
+ *
+ * The daemon has always served a dashboard on its HTTP port, but no idempotent
+ * surface ever named it — `start` only mentions it on a *fresh* start, and the
+ * first-run auto-open fires exactly once per machine. This command is the
+ * always-available answer to "where is the UI?".
+ */
+async function cmdDashboard(flags) {
+  const projectDir = resolveProjectDir(flags);
+  const port = resolvePort(flags, projectDir);
+
+  const health = await probeAwarenessDaemon(port);
+  if (!health) {
+    console.error(`Awareness Local daemon is not running on port ${port}.`);
+    console.error('Start it first:');
+    console.error('  awareness-local start');
+    process.exit(1);
+  }
+
+  const url = health.ui_url || `http://localhost:${port}/`;
+  console.log(`Awareness Local dashboard: ${url}`);
+  if (health.indexer && health.indexer.ok === false) {
+    console.log(`  !! index unavailable: ${health.indexer.reason || 'unknown'}`);
+  }
+
+  if (flags['no-open'] === true) return;
+
+  try {
+    const { exec } = await import('node:child_process');
+    if (process.platform === 'darwin') exec(`open "${url}"`, { windowsHide: true });
+    else if (process.platform === 'linux') exec(`xdg-open "${url}"`, { windowsHide: true });
+    else if (process.platform === 'win32') exec(`start "" "${url}"`, { windowsHide: true });
+    else console.log('  (open the URL manually — unsupported platform)');
+  } catch {
+    console.log('  (could not launch a browser — open the URL manually)');
   }
 }
 
@@ -908,6 +996,7 @@ Commands:
   start     Start the daemon (default)
   stop      Stop the daemon
   status    Show daemon status and stats
+  dashboard Print the Web UI URL and open it in your browser
   reindex   Rebuild the search index
   mcp       Run as stdio MCP server
   anchor    ERC-8350 memory anchoring: 'anchor status' | 'anchor flush' (F-088)
@@ -918,6 +1007,7 @@ Options:
   --project <dir>      Project directory (default: current directory)
   --port <port>        HTTP port (default: 37800)
   --foreground         Run in foreground (don't detach)
+  --no-open            Dashboard: print the URL without launching a browser
   --dataset <path>     Benchmark JSONL dataset path
   --backend <kind>     builtin | qmd | hybrid | all (benchmark only)
   --report <path>      Write benchmark JSON report
@@ -938,6 +1028,7 @@ Options:
 Examples:
   npx @awareness.market/local start
   npx @awareness.market/local status
+  npx @awareness.market/local dashboard
   npx @awareness.market/local stop
   npx @awareness.market/local reindex --project /path/to/project
   npx @awareness.market/local mcp --project /path/to/project --port 37800
@@ -971,6 +1062,9 @@ async function main() {
     case 'status':
       await cmdStatus(flags);
       break;
+    case 'dashboard':
+      await cmdDashboard(flags);
+      break;
     case 'reindex':
       await cmdReindex(flags);
       break;
@@ -997,44 +1091,3 @@ main().catch((err) => {
   console.error(`Fatal error: ${err.message}`);
   process.exit(1);
 });
-
-// ---------------------------------------------------------------------------
-// Command: install-transformers
-// ---------------------------------------------------------------------------
-
-async function cmdInstallTransformers(flags) {
-  console.log('Installing @huggingface/transformers...');
-  
-  try {
-    // Try to require the transformers module to see if it's already installed
-    require.resolve('@huggingface/transformers');
-    console.log('@huggingface/transformers is already installed.');
-    return;
-  } catch (e) {
-    // Not installed, proceed with installation
-  }
-  
-  const { execSync } = await import('child_process');
-  
-  try {
-    // Determine the package manager based on lock files
-    const projectRoot = process.cwd();
-    const fs = await import('fs');
-    let cmd = 'npm install @huggingface/transformers@^3.0.0';
-    
-    if (fs.existsSync('yarn.lock')) {
-      cmd = 'yarn add @huggingface/transformers@^3.0.0';
-    } else if (fs.existsSync('pnpm-lock.yaml')) {
-      cmd = 'pnpm add @huggingface/transformers@^3.0.0';
-    }
-    
-    console.log(`Running: ${cmd}`);
-    execSync(cmd, { stdio: 'inherit' });
-    
-    console.log('@huggingface/transformers installed successfully!');
-    console.log('Awareness Local now has vector search capabilities.');
-  } catch (err) {
-    console.error('Failed to install @huggingface/transformers:', err.message);
-    process.exit(1);
-  }
-}

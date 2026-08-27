@@ -1,6 +1,6 @@
 # @awareness.market/local
 
-[![npm](https://img.shields.io/npm/v/@awareness.market/local?color=7b68ee)](https://www.npmjs.com/package/@awareness.market/local) [![LongMemEval R@5](https://img.shields.io/badge/LongMemEval_R%405-96.0%25-brightgreen)](https://arxiv.org/abs/2410.10813) [![Discord](https://img.shields.io/discord/1354000000000000000?color=5865F2&logo=discord&logoColor=white&label=Discord)](https://discord.com/invite/nMDrT538Qa)
+[![npm](https://img.shields.io/npm/v/@awareness.market/local?color=7b68ee)](https://www.npmjs.com/package/@awareness.market/local) [![LongMemEval R@5](https://img.shields.io/badge/LongMemEval_R%405-96.0%25-brightgreen)](https://arxiv.org/abs/2410.10813) [![Discord](https://img.shields.io/discord/1043506996906836079?color=5865F2&logo=discord&logoColor=white&label=Discord)](https://discord.com/invite/nMDrT538Qa)
 
 Local-first AI agent memory system. No account needed.
 
@@ -128,6 +128,42 @@ await record({ content: "Refactored auth middleware." });
 const result = await retrieve({ query: "What did we refactor?" });
 console.log(result.results);
 ```
+
+## Web Dashboard
+
+The daemon serves a local web UI at **<http://localhost:37800/>** — browse your
+memories, knowledge cards, tasks and sessions, and check index health.
+
+It is available whenever the daemon is running, and only then. If the page does
+not load, the daemon is not up: run `awareness-local start`.
+
+```bash
+# Print the dashboard URL and open it in your default browser
+awareness-local dashboard
+
+# Print the URL only (no browser launch) — handy over SSH
+awareness-local dashboard --no-open
+```
+
+`awareness-local status` also prints the dashboard URL, and `GET /healthz`
+returns it as the `ui_url` field. If you started the daemon on a custom port
+(`awareness-local start --port 41000`), pass the same `--port` to `dashboard`
+and `status`.
+
+The UI is bound to localhost and is not exposed to your network.
+
+### Re-running the setup wizard
+
+The first-run wizard remembers that you finished it, so it will not reappear.
+To walk through it again — after connecting cloud sync, or on a workspace you
+set up differently — open:
+
+```
+http://localhost:37800/?onboarding=1
+```
+
+The parameter is removed from the address bar immediately, so refreshing or
+bookmarking the page will not restart the wizard again.
 
 ## Perception (Record-Time Signals)
 

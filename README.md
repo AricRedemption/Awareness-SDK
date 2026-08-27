@@ -8,7 +8,7 @@
   <a href="https://www.npmjs.com/package/@awareness-sdk/local"><img src="https://img.shields.io/npm/v/@awareness-sdk/local?color=22c55e&label=local" alt="local"/></a>
   <a href="https://awareness.market"><img src="https://img.shields.io/badge/Cloud-awareness.market-5ce0d2" alt="Cloud"/></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue" alt="License"/></a>
-  <a href="https://discord.com/invite/nMDrT538Qa"><img src="https://img.shields.io/discord/1354000000000000000?color=5865F2&logo=discord&logoColor=white&label=Discord" alt="Discord"/></a>
+  <a href="https://discord.com/invite/nMDrT538Qa"><img src="https://img.shields.io/discord/1043506996906836079?color=5865F2&logo=discord&logoColor=white&label=Discord" alt="Discord"/></a>
 </p>
 
 <p align="center">

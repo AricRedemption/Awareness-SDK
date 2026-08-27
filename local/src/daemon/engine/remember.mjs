@@ -26,6 +26,16 @@ export async function remember(daemon, params) {
     return { error: 'content is required for remember action' };
   }
 
+  // Pin the workspace for the whole write. `_switching` (http-router.mjs:34)
+  // only rejects requests that have not started yet — a request already inside
+  // keeps running while switchProject() closes the old index.db and rebinds
+  // daemon.indexer to a different project. Reading daemon.indexer live after an
+  // await would therefore file this memory into the WRONG project's database,
+  // silently. Background pipelines already pin this way (see
+  // engine/perception-resolve.mjs:20-23); the request path did not.
+  const projectAtStart = daemon.projectDir;
+  const indexerAtStart = daemon.indexer;
+
   const noiseReason = classifyNoiseEvent(params);
   if (noiseReason) {
     return { status: 'skipped', reason: noiseReason };
@@ -77,11 +87,25 @@ export async function remember(daemon, params) {
     }
   }
 
+  // Fail fast BEFORE touching disk if the workspace moved under us. Returning
+  // an explicit error (rather than silently dropping the write, as background
+  // pipelines do) is deliberate: the caller asked us to remember something, so
+  // "it vanished" is never an acceptable outcome — the client must be able to
+  // retry against the right project.
+  if (daemon.projectDir !== projectAtStart) {
+    return {
+      error: 'workspace_switched',
+      message: 'Workspace changed while this memory was being written; nothing was saved. Retry.',
+    };
+  }
+
   // Write markdown file
   const { id, filepath } = await daemon.memoryStore.write(memory);
 
-  // Index in SQLite (sanitized content so FTS + embeddings skip the envelope prefix)
-  daemon.indexer.indexMemory(id, { ...memory, filepath }, contentForPersist);
+  // Index in SQLite (sanitized content so FTS + embeddings skip the envelope prefix).
+  // Use the pinned indexer, never daemon.indexer: after the await above the
+  // daemon may point at another project, and writing there would corrupt it.
+  indexerAtStart.indexMemory(id, { ...memory, filepath }, contentForPersist);
 
   // Fire-and-forget embedding + knowledge extraction
   daemon._embedAndStore(id, contentForPersist).catch(() => {});

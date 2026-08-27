@@ -1,5 +1,84 @@
 # Changelog
 
+## [0.12.3] - 2026-08-28
+
+### Fixed - Windows MCP was completely dead (critical)
+
+**What you see:** on Windows, Awareness memory now actually works in Claude
+Code, Cursor and any other MCP client. Before this release it never did.
+
+The stdio MCP server has been broken on Windows since 2026-03-27. It printed
+`stdio MCP proxy connected and ready.` and then answered nothing at all --
+`initialize` got no response, so the client sat on "connecting" forever, no
+tools were exposed, and because the daemon is only started lazily on the first
+tool call, it was never started either. That meant no local index, no dashboard
+at http://localhost:37800/, and nothing being remembered. Silently.
+
+Two more symptoms came from the same line: each proxy process pinned a CPU core
+at ~107% permanently, and none of them could ever exit, so every closed editor
+session left an orphan behind. One user's machine had four of them, having
+burned 232 CPU-hours between them.
+
+Cause: a `process.stdin.setEncoding('utf8')` added under a `win32` guard to fix
+CJK text. The MCP SDK frames the protocol on raw Buffers, and `setEncoding`
+makes stdin emit Strings, so the SDK's `readMessage()` threw on every frame and
+its `while (true)` retry loop spun forever without ever draining the buffer.
+Removing it does not regress CJK -- the SDK decodes each complete frame as
+UTF-8 itself, verified intact even when a frame is split mid-character.
+
+macOS and Linux were never affected, which is why CI stayed green for five
+months.
+
+### Fixed - memories could be written into the wrong project
+
+A workspace switch landing while a request was in flight could file a memory,
+card or task into a different project's database. The switch guard only
+rejected requests that had not started yet, and the request path re-read the
+live indexer after every await. Background pipelines already pinned the
+workspace; `remember`, `submit_insights` and `lookup` now do too, and
+`awareness_record` returns an explicit `workspace_switched` error rather than
+silently discarding the write.
+
+Windows users were previously shielded from this only because MCP never ran.
+With MCP working again the path is reachable, so the fix ships alongside it.
+
+### Fixed - a dead index no longer reports itself as healthy
+
+When better-sqlite3 cannot load, the daemon falls back to a no-op indexer. That
+fallback was indistinguishable from a working-but-empty one: `/healthz` returned
+`status: "ok"`, `awareness-local status` printed `Memories: 0`, writes returned
+`{"status":"ok"}` while vanishing, and recall returned nothing forever -- which
+reads as "you have no relevant memories" rather than "your index is broken".
+
+The fallback now carries a `degraded` flag with the underlying reason.
+`/healthz` reports `status: "degraded"` plus an `indexer: {ok, reason}` block,
+and `status` prints a prominent warning instead of a plausible zero. An empty
+workspace and a dead index are now telling apart. The branch where a
+better-sqlite3 rebuild failed also used to print nothing at all; it now says so.
+
+### Fixed - no more flashing console windows on Windows
+
+Every child process the daemon starts — the daemon itself, and the `git` calls
+it makes while scanning a workspace — was spawned without `windowsHide`, so
+Windows popped a console window each time and it flashed away. Scanning runs
+those git commands repeatedly, so an active daemon produced visible flicker.
+All spawn sites now set it.
+
+### Fixed - other
+
+- `zod` is now a declared dependency. It was imported but resolved only through
+  npm hoisting, so installs under pnpm or Yarn PnP died at module load and
+  presented an empty tool list.
+- Daemon HTTP calls now time out after 120s. A daemon that accepted the
+  connection but never replied used to hang the proxy forever, with no error
+  and no retry.
+- The workspace registry no longer grows without bound -- entries whose
+  directory is gone are pruned on write. Registries had reached 2500+ entries
+  in the wild.
+- `AWARENESS_HOME` now redirects the registry so tests and sandboxed installs
+  can isolate properly. On Windows `os.homedir()` ignores `HOME`, which is why
+  the test suite had been writing into real user profiles.
+
 ## [0.12.2] - 2026-08-21
 
 ### Added — Open Deal Board CLI (anonymous)

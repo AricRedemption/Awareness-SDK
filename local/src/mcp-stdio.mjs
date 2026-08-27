@@ -33,9 +33,20 @@ import {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// Force UTF-8 on Windows so Chinese/CJK text in MCP stdio is not corrupted
+// Force UTF-8 on Windows so Chinese/CJK text in MCP stdio is not corrupted.
+//
+// NEVER call process.stdin.setEncoding() here. The MCP SDK's ReadBuffer frames
+// the protocol on raw Buffers: readMessage() calls `this._buffer.subarray(...)`,
+// which a String does not have. setEncoding('utf8') makes stdin emit Strings,
+// so readMessage() throws TypeError — and the SDK's processReadBuffer() swallows
+// it inside `while (true)` without advancing the buffer. Result: a synchronous
+// infinite loop that pegs a core at 100%, freezes the event loop, and starves
+// every shutdown path below (stdin end/close, SIGTERM, parentWatch). Windows MCP
+// was silently dead for 5 months this way (da857de5, 2026-03-27).
+//
+// stdin needs no encoding anyway: the SDK decodes each frame as UTF-8 itself,
+// so CJK is safe. Only the outbound streams are set here.
 if (process.platform === 'win32') {
-  try { process.stdin.setEncoding('utf8'); } catch { /* best-effort */ }
   try { process.stdout.setEncoding('utf8'); } catch { /* best-effort */ }
   try { process.stderr.setEncoding('utf8'); } catch { /* best-effort */ }
 }
@@ -56,6 +67,14 @@ function log(...args) {
  * Simple HTTP POST that returns parsed JSON.
  * Uses only node:http to avoid external dependencies.
  */
+// Tool calls can legitimately run long (embedding, LLM classify), so this is a
+// generous ceiling rather than a latency budget. It exists because a daemon that
+// accepts the TCP connection but never answers — event-loop stall, SQLite lock
+// contention, a wedged embedder — would otherwise hang the proxy forever: no
+// error, no retry, and an MCP client left waiting on a call that never returns.
+// checkHealth/getHealthInfo already guard themselves this way (2s).
+const DAEMON_POST_TIMEOUT_MS = 120_000;
+
 function httpPost(url, body, headers = {}) {
   return new Promise((resolve, reject) => {
     const u = new URL(url);
@@ -84,6 +103,13 @@ function httpPost(url, body, headers = {}) {
         });
       },
     );
+    req.setTimeout(DAEMON_POST_TIMEOUT_MS, () => {
+      req.destroy();
+      reject(new Error(
+        `Daemon did not respond within ${DAEMON_POST_TIMEOUT_MS / 1000}s (${u.pathname}). `
+        + 'It may be stalled mid-switch or blocked on the index; the call was aborted.',
+      ));
+    });
     req.on('error', reject);
     req.write(data);
     req.end();
@@ -190,7 +216,36 @@ export async function ensureDaemon(port, projectDir) {
     fs.closeSync(lockFd);
     lockAcquired = true;
   } catch (e) {
-    if (e.code !== 'EEXIST') {
+    if (e.code === 'EEXIST') {
+      // Someone holds the lock — but they may be dead. Without this check a
+      // proxy killed between openSync and the finally-release leaves the file
+      // behind forever, and every later ensureDaemon() takes the "another
+      // process is starting" branch, waits the full 15s, then throws
+      // "Daemon did not become healthy". Manually killing stale proxies (the
+      // documented cleanup for the orphan-process bug) is exactly how that
+      // happens. bin/awareness-local.mjs already does this for daemon.starting;
+      // this lock was the asymmetric one.
+      let ownerAlive = false;
+      let ownerPid = null;
+      try {
+        ownerPid = parseInt(fs.readFileSync(lockPath, 'utf-8').trim(), 10);
+        if (Number.isInteger(ownerPid) && ownerPid > 0) {
+          process.kill(ownerPid, 0);   // throws if the process is gone
+          ownerAlive = true;
+        }
+      } catch { /* unreadable, malformed, or dead owner → treat as stale */ }
+
+      if (!ownerAlive) {
+        log(`Removing stale startup lock (owner pid ${ownerPid ?? 'unknown'} is gone)`);
+        try {
+          fs.unlinkSync(lockPath);
+          const lockFd = fs.openSync(lockPath, 'wx');
+          fs.writeSync(lockFd, String(process.pid));
+          fs.closeSync(lockFd);
+          lockAcquired = true;
+        } catch { /* lost the race to another proxy — fine, it will spawn */ }
+      }
+    } else {
       // Unexpected error — fall through to spawn anyway
       log(`Warning: Failed to acquire startup lock: ${e.message}`);
     }
@@ -204,7 +259,24 @@ export async function ensureDaemon(port, projectDir) {
       const child = spawn(process.execPath, args, {
         stdio: 'ignore',
         detached: true,
+        // Otherwise Windows flashes a console window when the daemon starts.
+        windowsHide: true,
         env: { ...process.env, PORT: String(port) },
+      });
+      // stdio:'ignore' discards everything the child says, so without these
+      // listeners a failed spawn or an instant crash was completely invisible:
+      // the caller just waited out the 15s health poll and reported "Daemon did
+      // not become healthy", never why. These fire in this process, so they
+      // survive the stdio black hole.
+      child.on('error', (err) => {
+        log(`Failed to spawn daemon: ${err.message} (tried: ${process.execPath} ${args.join(' ')})`);
+      });
+      child.on('exit', (code, signal) => {
+        // A detached daemon that exits promptly has crashed; a healthy one keeps
+        // running and never reaches here while we are still waiting.
+        if (code !== 0 && code !== null) {
+          log(`Daemon exited immediately with code ${code}${signal ? ` (signal ${signal})` : ''} — check .awareness/daemon.log`);
+        }
       });
       child.unref();
     } else {
@@ -541,13 +613,39 @@ export async function startStdioMcp({ port = 37800, projectDir } = {}) {
   process.on('SIGTERM', () => shutdown('SIGTERM'));
   process.on('SIGINT', () => shutdown('SIGINT'));
 
-  // Windows belt-and-suspenders: `cmd /c npx` can orphan us so stdin never EOFs.
-  // Poll the parent PID — signal 0 throws once the parent is gone → we exit.
+  // Backstop for the case where stdin never EOFs.
+  //
+  // The parent-PID poll below only works where our parent IS the client. On
+  // Windows it never is: npm installs a `cmd /c` shim, so process.ppid is that
+  // cmd.exe — and cmd.exe waits on *us*, meaning it can never die first. The
+  // process that actually goes away is the grandparent (claude.exe), which
+  // process.ppid cannot see. So on Windows this guard has always been a no-op,
+  // despite the comment that used to claim it was the Windows safety net.
+  //
+  // Rather than walk the ancestor chain (a spawn per poll, and the chain shape
+  // differs per client), fall back to inactivity: a stdio server with no client
+  // receives nothing on stdin, ever. Every inbound byte refreshes the clock, so
+  // an idle-but-attached session is only reaped after a very long silence —
+  // long enough that a real session would have to be abandoned to hit it.
+  const IDLE_EXIT_MS = 4 * 60 * 60 * 1000; // 4h
+  let lastActivityAt = Date.now();
+  process.stdin.on('data', () => { lastActivityAt = Date.now(); });
+
   const parentPid = process.ppid;
   parentWatch = setInterval(() => {
-    if (!parentPid || parentPid <= 1) return;
-    try { process.kill(parentPid, 0); } catch { shutdown('parent process gone'); }
-  }, 5000);
+    // POSIX: the parent really is the client, so its death is our signal.
+    if (parentPid && parentPid > 1) {
+      try {
+        process.kill(parentPid, 0);
+      } catch {
+        shutdown('parent process gone');
+        return;
+      }
+    }
+    if (Date.now() - lastActivityAt > IDLE_EXIT_MS) {
+      shutdown(`no client activity for ${Math.round(IDLE_EXIT_MS / 3600000)}h`);
+    }
+  }, 30_000);
   parentWatch.unref();
 
   await server.connect(transport);

@@ -36,6 +36,7 @@ import {
   nowISO,
   splitPreferences,
 } from './daemon/helpers.mjs';
+import { attachFileLogger, detachFileLogger } from './daemon/log-writer.mjs';
 import {
   loadDaemonConfig,
   loadDaemonSpec,
@@ -220,6 +221,14 @@ export class AwarenessLocalDaemon {
     fs.mkdirSync(path.join(this.awarenessDir, 'knowledge'), { recursive: true });
     fs.mkdirSync(path.join(this.awarenessDir, 'tasks'), { recursive: true });
 
+    // Start teeing console output to daemon.log before anything can fail.
+    // Until now this.logFile was assigned and never read: the only producer of
+    // a log was bin/ redirecting the child's fds, a path that `mcp` skips
+    // entirely (it spawns with stdio:'ignore'). Since IDEs start the daemon via
+    // `mcp`, every diagnostic the daemon emitted was discarded for exactly the
+    // users most likely to need it.
+    attachFileLogger(this.logFile);
+
     // ---- Init core modules ----
     this.memoryStore = new MemoryStore(this.projectDir);
     try {
@@ -235,15 +244,19 @@ export class AwarenessLocalDaemon {
             this.indexer = new Indexer(path.join(this.awarenessDir, 'index.db'));
           } catch (e2) {
             console.error(`[awareness-local] SQLite still unavailable after rebuild: ${e2.message}`);
-            this.indexer = createNoopIndexer();
+            this.indexer = createNoopIndexer(`SQLite unavailable after rebuild: ${e2.message}`);
           }
         } else {
-          this.indexer = createNoopIndexer();
+          // This branch used to be completely silent — the rebuild failed and
+          // the daemon carried on with a dead index saying nothing at all.
+          console.error(`[awareness-local] better-sqlite3 rebuild failed: ${e.message}`);
+          console.error('[awareness-local] Running WITHOUT an index — nothing will be searchable. Try: npm rebuild better-sqlite3');
+          this.indexer = createNoopIndexer(`better-sqlite3 rebuild failed: ${e.message}`);
         }
       } else {
         console.error(`[awareness-local] SQLite indexer unavailable: ${e.message}`);
         console.error('[awareness-local] Falling back to file-only mode (no search). Install better-sqlite3: npm install better-sqlite3');
-        this.indexer = createNoopIndexer();
+        this.indexer = createNoopIndexer(`SQLite indexer unavailable: ${e.message}`);
       }
     }
 
@@ -466,6 +479,9 @@ export class AwarenessLocalDaemon {
     }
 
     console.log('[awareness-local] daemon stopped');
+    // Last line written, so close the log file and restore console. Ordering
+    // matters: detaching earlier would drop the shutdown messages above.
+    detachFileLogger();
   }
 
   /**
@@ -986,13 +1002,17 @@ export class AwarenessLocalDaemon {
       fs.mkdirSync(path.join(this.awarenessDir, 'knowledge'), { recursive: true });
       fs.mkdirSync(path.join(this.awarenessDir, 'tasks'), { recursive: true });
 
+      // Re-point the log at the new project's .awareness/, otherwise
+      // post-switch diagnostics keep landing in the previous project's file.
+      attachFileLogger(this.logFile);
+
       // 5. Re-init core modules
       this.memoryStore = new MemoryStore(this.projectDir);
       try {
         this.indexer = new Indexer(path.join(this.awarenessDir, 'index.db'));
       } catch (e) {
         console.error(`[awareness-local] SQLite indexer unavailable after switch: ${e.message}`);
-        this.indexer = createNoopIndexer();
+        this.indexer = createNoopIndexer(`SQLite unavailable after workspace switch: ${e.message}`);
       }
       this.search = await this._loadSearchEngine();
       this.extractor = await this._loadKnowledgeExtractor();

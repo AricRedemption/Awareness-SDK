@@ -2863,19 +2863,21 @@ async function renderSettingsPanel() {
 
   // Load workspaces async
   try {
-    const ws = await (await fetch('/api/v1/workspaces')).json();
+    // Always pass `?limit=` so the daemon takes the paginated branch. Without it
+    // apiWorkspaces() falls through to the legacy back-compat branch and returns
+    // the entire registry map (real users hit 2600 entries / ~450KB per load).
+    const ws = await (await fetch('/api/v1/workspaces?limit=200')).json();
+    // Paginated shape: { workspaces: [{ path, port, name, lastUsed, ... }], total }
+    // Legacy / error shape: { "<path>": { port, name, lastUsed, ... } } or {}
+    const wsEntries = Array.isArray(ws && ws.workspaces)
+      ? ws.workspaces.filter(w => w && w.path).map(w => [w.path, w])
+      : Object.entries(ws || {});
     const el = document.getElementById('ws-list');
-    if (!ws || Object.keys(ws).length === 0) {
+    if (wsEntries.length === 0) {
       el.innerHTML = `<span style="color:var(--text-muted);font-size:0.82rem">${t('settings.ws_no')}</span>`;
     } else {
-      const entries = Object.entries(ws)
-        .filter(([dir]) => {
-          if (dir.startsWith('/tmp/') || dir.startsWith('/private/tmp/') || dir.startsWith('/var/')) return false;
-          if (dir.includes('awareness-local-smoke') || dir.includes('awareness-local-stop') ||
-              dir.includes('awareness-local-embed') || dir.includes('awareness-local-noise') ||
-              dir.includes('awareness-local-focus') || dir.includes('XXXXXX')) return false;
-          return true;
-        })
+      const entries = wsEntries
+        .filter(([dir]) => !isTempWorkspacePath(dir))
         .sort((a, b) => (b[1].lastUsed || '').localeCompare(a[1].lastUsed || ''));
       let h = '';
       for (const [dir, w] of entries) {
@@ -2893,6 +2895,43 @@ async function renderSettingsPanel() {
       el.innerHTML = h || `<span style="color:var(--text-muted);font-size:0.82rem">${t('settings.ws_no_user')}</span>`;
     }
   } catch {}
+}
+
+/**
+ * Hide throwaway temp/test workspaces from the settings list.
+ *
+ * The previous inline filter was POSIX-only ('/tmp/', '/private/tmp/', '/var/'),
+ * so on Windows every `C:\Users\<user>\AppData\Local\Temp\...` scratch dir showed
+ * up as a real workspace. Separators are normalised to '/' and the path is
+ * lower-cased so one pattern set covers Win32 and POSIX.
+ */
+function isTempWorkspacePath(dir) {
+  const raw = String(dir || '');
+  if (!raw) return true;
+  let n = raw.replace(/\\/g, '/').toLowerCase();
+  if (!n.endsWith('/')) n += '/';
+
+  // POSIX temp roots
+  if (n.startsWith('/tmp/') || n.startsWith('/private/tmp/') || n.startsWith('/var/')) return true;
+
+  // Windows temp roots:
+  //   %LOCALAPPDATA%\Temp  -> C:\Users\<u>\AppData\Local\Temp\...
+  //   %WINDIR%\Temp        -> C:\Windows\Temp\...
+  //   legacy               -> C:\Temp\...
+  if (n.includes('/appdata/local/temp/')) return true;
+  if (n.includes('/appdata/roaming/temp/')) return true;
+  if (/^[a-z]:\/windows\/temp\//.test(n)) return true;
+  if (/^[a-z]:\/temp\//.test(n)) return true;
+  // UNC-normalised drive form (\\?\C:\...)
+  if (/^\/\/\?\/[a-z]:\/(windows\/)?temp\//.test(n)) return true;
+
+  // mkstemp/mktemp template leftovers (kept case-sensitive, as before)
+  if (raw.includes('XXXXXX')) return true;
+
+  // Known smoke/e2e scratch dirs
+  return raw.includes('awareness-local-smoke') || raw.includes('awareness-local-stop') ||
+    raw.includes('awareness-local-embed') || raw.includes('awareness-local-noise') ||
+    raw.includes('awareness-local-focus');
 }
 
 function settingDisplay(label, value, isHtml) {

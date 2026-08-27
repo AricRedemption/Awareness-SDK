@@ -7,8 +7,7 @@
   "homepage": "https://awareness.market",
   "repository": {
     "type": "git",
-    "url": "https://github.com/everest-an/Awareness-SDK",
-    "directory": "opencode"
+    "url": "git+https://github.com/everest-an/Awareness-SDK.git"
   },
   "type": "module",
   "main": "dist/index.js",
@@ -44,5 +43,8 @@
   },
   "publishConfig": {
     "access": "public"
+  },
+  "bugs": {
+    "url": "https://github.com/everest-an/Awareness-SDK/issues"
   }
 }
