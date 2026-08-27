@@ -20,17 +20,17 @@ Awareness Memory is evaluated on **[LongMemEval](https://arxiv.org/abs/2410.1081
 ║                                                              ║
 ║   ┌─────────────────────────────────────────────────┐        ║
 ║   │                                                 │        ║
-║   │   Recall@1    77.6%    (388 / 500)              │        ║
-║   │   Recall@3    91.8%    (459 / 500)              │        ║
+║   │   Recall@1    80.2%    (401 / 500)              │        ║
+║   │   Recall@3    92.8%    (464 / 500)              │        ║
 ║   │   Recall@5    96.0%    (480 / 500)  ◀ PRIMARY   │        ║
-║   │   Recall@10   97.4%    (487 / 500)              │        ║
+║   │   Recall@10   98.6%    (493 / 500)              │        ║
 ║   │                                                 │        ║
 ║   └─────────────────────────────────────────────────┘        ║
 ║                                                              ║
-║   Method:     Hybrid RRF (BM25 + Semantic Vector Search)     ║
-║   Embedding:  all-MiniLM-L6-v2 (384d)                       ║
+║   Method:     Hybrid RRF (BM25 + vector, daemon pipeline)    ║
+║   Embedding:  multilingual-e5-small (production model)       ║
 ║   LLM Calls:  0  (pure retrieval, no generation cost)        ║
-║   Hardware:   Apple M1, 8GB RAM — 14 min total               ║
+║   Hardware:   Apple M1, 8GB RAM — 35 min total               ║
 ║                                                              ║
 ╚══════════════════════════════════════════════════════════════╝
 ```
@@ -64,30 +64,30 @@ Awareness Memory is evaluated on **[LongMemEval](https://arxiv.org/abs/2410.1081
 ┌─────────────────────────────────────────────────────────────┐
 │     Awareness Memory — R@5 by Question Type                 │
 │                                                             │
-│  knowledge-update        ████████████████████████████ 100%  │
-│  multi-session           ███████████████████████████▋  98.5%│
+│  knowledge-update        ███████████████████████████ 98.7%  │
+│  multi-session           ███████████████████████████▊  99.2%│
 │  single-session-asst     ███████████████████████████▌  98.2%│
-│  temporal-reasoning      █████████████████████████▊    94.7%│
-│  single-session-user     ████████████████████████▎     88.6%│
-│  single-session-pref     ███████████████████████▏      86.7%│
+│  temporal-reasoning      ██████████████████████████▏   93.2%│
+│  single-session-user     ██████████████████████████    92.9%│
+│  single-session-pref     █████████████████████████▎    90.0%│
 │                                                             │
-│  Overall                 █████████████████████████▉    96.0%│
+│  Overall                 ██████████████████████████▉   96.0%│
 │                                                             │
 │  ┌───────────────────────────────────────────────┐          │
 │  │  Ablation Study                               │          │
 │  │  ─────────────────────────────────────────    │          │
 │  │  Vector-only:   92.6%  ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░     │          │
 │  │  BM25-only:     91.4%  ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░     │          │
-│  │  Hybrid RRF:    96.0%  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░  ★  │          │
-│  │                        Hybrid = +3% over any  │          │
-│  │                        single method alone    │          │
+│  │  Hybrid RRF:    95.6%  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░  ★  │          │
+│  │  (2026-04 harness run)                        │          │
+│  │  Hybrid = +3% over any single method          │          │
 │  └───────────────────────────────────────────────┘          │
 │                                                             │
 │  arxiv.org/abs/2410.10813          awareness.market         │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-Zero LLM calls. Runs on Apple M1 8GB in 14 minutes. [Reproducible benchmark scripts →](https://github.com/everest-an/Awareness/tree/main/benchmarks/longmemeval)
+Zero LLM calls on retrieval. Daemon-path run: Apple M1 8GB, 35 minutes. [Reproducible benchmark scripts →](https://github.com/everest-an/Awareness-Market/tree/main/benchmarks/longmemeval)
 
 ---
 
@@ -237,7 +237,7 @@ Most memory systems pick one extraction strategy. Awareness combines them:
 - **Zero-LLM backend** — all extraction runs on the client's LLM (Claude, GPT-4, Gemini, local Llama). The backend is a coordinator + storage layer; no inference costs pass through to you.
 - **One memory, many clients** — same daemon reachable via Claude Code skills, OpenClaw plugin, npm / pip / ClawHub, and a plain MCP server. Install any one surface and the rest just work against the same memory.
 
-See [`docs/analysis/MEMPALACE_COMPARISON_2026-04-17.md`](https://github.com/everest-an/Awareness/blob/main/docs/analysis/MEMPALACE_COMPARISON_2026-04-17.md) for the honest side-by-side against MemPalace (96.6% R@5 via raw verbatim storage) — what we'd adopt from their approach and what we keep from ours.
+See [Awareness vs. Alternatives](https://awareness.market/sdk-docs/ALTERNATIVES.md) for the honest side-by-side against MemPalace (96.6% R@5 via raw verbatim storage) — what we'd adopt from their approach and what we keep from ours.
 
 ## License
 

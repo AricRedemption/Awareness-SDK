@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.4.14] - 2026-08-28
+
+### Fixed — the OpenClaw plugin it installed was two patches behind
+
+`setup` ran `openclaw plugins install @awareness-sdk/openclaw-memory`, an old
+scope that stopped at 0.6.16, while the maintained package
+`@awareness.market/openclaw-memory` is at 0.6.18. The two names sit under
+different npm accounts, so the old one never received the newer releases —
+anyone who configured OpenClaw through the wizard got the stale plugin.
+
+The daemon side was already correct: `.mcp.json` and the start command have
+pointed at `@awareness.market/local` all along, so only the OpenClaw path was
+affected.
+
 ## [0.4.12] - 2026-04-25
 
 ### Fixed — fresh-install daemon-start no longer fails on slow networks
