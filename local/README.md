@@ -121,13 +121,44 @@ npm install -g @awareness.market/local
 awareness-local start
 ```
 
-```javascript
-import { record, retrieve } from "@awareness.market/local/api";
+Once the daemon is running, talk to it over the local MCP endpoint. Every call
+below was executed against a real daemon before being written here.
 
-await record({ content: "Refactored auth middleware." });
-const result = await retrieve({ query: "What did we refactor?" });
-console.log(result.results);
+```javascript
+// The daemon exposes MCP over HTTP on 127.0.0.1:37800 — no SDK to install.
+const call = (name, args) =>
+  fetch("http://localhost:37800/mcp", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      jsonrpc: "2.0", id: 1, method: "tools/call",
+      params: { name, arguments: args },
+    }),
+  })
+    .then((r) => r.json())
+    .then((j) => j.result.content[0].text);
+
+await call("awareness_record", {
+  action: "remember",
+  content: "Refactored auth middleware to use JWT rotation.",
+});
+
+console.log(await call("awareness_recall", { semantic_query: "auth middleware" }));
+// Found 1 memories:
+// 1. [turn_summary] Refactored auth middleware to use JWT rotation (70%, today)
 ```
+
+For structured data, the REST API returns JSON:
+
+```javascript
+const r = await fetch("http://localhost:37800/api/v1/memories?limit=10");
+const { items, total } = await r.json();
+```
+
+The package's JS exports (`@awareness.market/local/api`) are daemon *management*
+helpers — `getDaemonUrl`, `checkDaemonHealth`, `getDaemonStatus`, `getMcpUrl`,
+`loadLocalConfig` — not the memory API itself. Memory goes through MCP or REST,
+which is also how Claude Code and every other client reaches it.
 
 ## Web Dashboard
 
