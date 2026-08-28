@@ -5,10 +5,10 @@
 <p align="center">
   <a href="https://pypi.org/project/awareness-memory-cloud/"><img src="https://img.shields.io/pypi/v/awareness-memory-cloud?color=00d4ff&label=PyPI" alt="PyPI"/></a>
   <a href="https://www.npmjs.com/package/@awareness-sdk/memory-cloud"><img src="https://img.shields.io/npm/v/@awareness-sdk/memory-cloud?color=7b68ee&label=npm" alt="npm"/></a>
-  <a href="https://www.npmjs.com/package/@awareness-sdk/local"><img src="https://img.shields.io/npm/v/@awareness-sdk/local?color=22c55e&label=local" alt="local"/></a>
+  <a href="https://www.npmjs.com/package/@awareness.market/local"><img src="https://img.shields.io/npm/v/@awareness.market/local?color=22c55e&label=local" alt="local"/></a>
   <a href="https://awareness.market"><img src="https://img.shields.io/badge/Cloud-awareness.market-5ce0d2" alt="Cloud"/></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue" alt="License"/></a>
-  <a href="https://discord.com/invite/nMDrT538Qa"><img src="https://img.shields.io/discord/1043506996906836079?color=5865F2&logo=discord&logoColor=white&label=Discord" alt="Discord"/></a>
+  <a href="https://discord.com/invite/nMDrT538Qa"><img src="https://img.shields.io/badge/Discord-Join%20Community-5865F2?style=flat&logo=discord&logoColor=white" alt="Discord"/></a>
 </p>
 
 <p align="center">
@@ -233,7 +233,7 @@ Your machine                          Cloud (optional)
 
 | Package | Description | Install |
 |---------|-------------|---------|
-| [`@awareness-sdk/local`](https://www.npmjs.com/package/@awareness-sdk/local) | Local daemon + MCP server | `npx @awareness-sdk/local start` |
+| [`@awareness.market/local`](https://www.npmjs.com/package/@awareness.market/local) | Local daemon + MCP server | `npx @awareness.market/local start` |
 | [`@awareness.market/setup`](https://www.npmjs.com/package/@awareness.market/setup) | CLI setup for all 13+ IDEs | `npx @awareness.market/setup` |
 | [`awareness-memory-cloud`](https://pypi.org/project/awareness-memory-cloud/) | Python SDK with interceptors | `pip install awareness-memory-cloud` |
 | [`@awareness-sdk/memory-cloud`](https://www.npmjs.com/package/@awareness-sdk/memory-cloud) | TypeScript SDK with interceptors | `npm i @awareness-sdk/memory-cloud` |
