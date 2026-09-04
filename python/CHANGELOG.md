@@ -1,5 +1,27 @@
 # Changelog
 
+## [2.7.0] - 2026-09-04
+
+### Added — MemoryCloudParametric adapter (M1 broker integration)
+- New `memory_cloud.integrations.parametric.MemoryCloudParametric` adapter
+  bridging the SDK to M1's `mt_lnn.memory_broker.MemoryBroker`. Same shape
+  as the langchain/crewai/praisonai/autogen adapters (inherits
+  `MemoryCloudBaseAdapter`): `wrap_llm`, `wrap_function`,
+  `get_tool_functions`, `memory_search`, `memory_write`, `memory_insights`,
+  `inject_into_messages`.
+- Direct parametric operations: `parametric_write`, `parametric_recall`,
+  `parametric_forget`, `parametric_snapshot`, `parametric_restore`,
+  `parametric_state_bytes`, `parametric_sessions`.
+- Dependency direction SDK→M1 (one-way); only imports
+  `mt_lnn.memory_broker` via try/except — silently degrades to logged
+  warnings when the package is absent. Daemon channel
+  (`localhost:37800`) untouched; broker unavailable → graceful fallback.
+- New optional dependency: `pip install 'awareness-memory-cloud[parametric]'`
+  (pulls `mt_lnn[memory_broker]` from `git+github.com/everest-an/M1`).
+- `examples/parametric_quickstart.py` — runnable demo with and without
+  a broker.
+- 28 new tests. Total Python SDK: 160 passed, 21 skipped.
+
 ## [2.6.0] - 2026-04-19
 
 ### Added — F-059 skill fields + F-060 client-side HyDE

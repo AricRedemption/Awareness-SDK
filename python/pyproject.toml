@@ -53,6 +53,9 @@ autogen = [
   "autogen-agentchat>=0.2.0",
   "openai>=1.0.0"
 ]
+parametric = [
+  "mt-lnn[memory_broker] @ git+https://github.com/everest-an/M1.git"
+]
 frameworks = [
   "langchain>=0.1.0",
   "crewai-tools>=0.0.1",
