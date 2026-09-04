@@ -85,6 +85,7 @@ import {
   ordinal as ordinalEngine,
 } from './daemon/engine/perception.mjs';
 import { remember as rememberEngine } from './daemon/engine/remember.mjs';
+import { onSessionEnd as onSessionEndHook } from './daemon/parametric-hooks.mjs';
 import {
   initWorkspaceScanner as initWorkspaceScannerImpl,
   triggerScan as triggerScanImpl,
@@ -194,11 +195,24 @@ export class AwarenessLocalDaemon {
 
     // Active MCP sessions (session-id → transport)
     this._mcpSessions = new Map();
+
+    // P2-1 · parametric broker for event hooks (optional, default null).
+    // Set via setParametricBroker(). When attached and config switches
+    // are on, record/conflict/session-end hooks fire (all default off).
+    this._parametricBroker = null;
   }
 
   // -----------------------------------------------------------------------
   // Lifecycle
   // -----------------------------------------------------------------------
+
+  /**
+   * P2-1 · Attach a parametric memory broker for event hooks.
+   * Pass null to detach. See parametric-hooks.mjs for switch details.
+   */
+  setParametricBroker(broker) {
+    this._parametricBroker = broker || null;
+  }
 
   /**
    * Start the daemon.
@@ -432,6 +446,10 @@ export class AwarenessLocalDaemon {
    * Stop the daemon gracefully.
    */
   async stop() {
+    // P2-1 · parametric broker session-end snapshot (consolidation_write,
+    // default off). Must run before indexer/cloudSync are torn down.
+    try { await onSessionEndHook(this); } catch { /* best-effort */ }
+
     // Stop file watcher
     if (this.watcher) {
       this.watcher.close();
