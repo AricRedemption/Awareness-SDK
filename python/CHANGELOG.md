@@ -22,6 +22,22 @@
   a broker.
 - 28 new tests. Total Python SDK: 160 passed, 21 skipped.
 
+### Added — Session migration CLI (export/import)
+- New `memory_cloud.session_migrate` module: `export_session()` and
+  `import_session()` for cross-process parametric memory transfer via
+  `MemoryBroker.snapshot/restore`. Package format reuses the existing
+  zip+JSONL convention from `export_reader.py` (manifest.json +
+  parametric/snapshot.json + parametric/bindings.jsonl).
+- CLI: `python -m memory_cloud.session_migrate export/import
+  --session-id <id> --output/--input <path>`.
+- `examples/migrate_session.py` — process A writes → snapshot → exit;
+  process B restore → recall all bindings (bit-exact), including
+  cross-directory migration and corrupt-archive rejection.
+- Bit-exactness covers the parametric layer only (F, z tensors + lexicon).
+  The SQLite episodic layer is NOT in the guarantee — both layers are
+  independently exportable.
+- 12 new tests. Total Python SDK: 172 passed, 21 skipped.
+
 ## [2.6.0] - 2026-04-19
 
 ### Added — F-059 skill fields + F-060 client-side HyDE
