@@ -30,9 +30,20 @@ jobs:
         run: python scripts/ci_trace_smoke.py
       - name: Run full test suite
         working-directory: python
-        run: python -m pytest tests/ --ignore=tests/test_sdk_functional.py -q
+        run: |
+          set -o pipefail
+          python -m pytest tests/ --ignore=tests/test_sdk_functional.py -q | tee /tmp/pytest-out.txt
         # test_sdk_functional.py 需要 live server（localhost:8000），为存量环境性排除，
         # 见 HANDOFF 与 PR #1 说明。
+      - name: Job summary
+        if: always()
+        run: |
+          {
+            echo "## Python tests（GOVERNANCE §3 门禁）"
+            echo '```'
+            tail -n 6 /tmp/pytest-out.txt 2>/dev/null || echo "(无输出)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
   claims-register:
     name: 主张登记簿校验（GOVERNANCE §7）
@@ -43,7 +54,18 @@ jobs:
         with:
           python-version: "3.12"
       - name: Check claims register
-        run: python3 scripts/check_claims.py --verbose
+        run: |
+          set -o pipefail
+          python3 scripts/check_claims.py --verbose | tee /tmp/claims-out.txt
+      - name: Job summary
+        if: always()
+        run: |
+          {
+            echo "## 主张登记簿校验（GOVERNANCE §7）"
+            echo '```'
+            tail -n 12 /tmp/claims-out.txt 2>/dev/null || echo "(无输出)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
   js-pr-gate:
     name: JS PR 相关套件（50 例门禁）
@@ -58,7 +80,19 @@ jobs:
         run: npm ci
       - name: PR-relevant suite (parametric first-hop / hooks / cascade)
         working-directory: local
-        run: node --test test/parametric-first-hop.test.mjs test/parametric-hooks.test.mjs test/unified-cascade-search.test.mjs
+        run: |
+          set -o pipefail
+          node --test test/parametric-first-hop.test.mjs test/parametric-hooks.test.mjs test/unified-cascade-search.test.mjs | tee /tmp/js-pr.txt
+      - name: Job summary
+        if: always()
+        run: |
+          {
+            echo "## JS PR 相关套件（GOVERNANCE §3 门禁）"
+            echo '```'
+            echo "pass: $(grep -cE '^✔' /tmp/js-pr.txt 2>/dev/null || echo 0)"
+            grep -E '^✖' /tmp/js-pr.txt 2>/dev/null | head -n 10 || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
   js-full-suite:
     name: JS 全量套件（非阻塞 · 存量失败跟踪）
@@ -74,8 +108,15 @@ jobs:
         run: npm ci
       - name: Full JS suite
         working-directory: local
-        run: node --test test/*.test.mjs
-      - name: Failure report
+        run: |
+          set -o pipefail
+          node --test test/*.test.mjs | tee /tmp/js-full.txt
+      - name: Failure report → step summary
         if: failure()
-        working-directory: local
-        run: node --test test/*.test.mjs 2>&1 | grep -E "^✖" | head -40 || true
+        run: |
+          {
+            echo "## JS 全量套件失败清单（非阻塞 · 存量失败跟踪，修复责任在上游 sync）"
+            echo '```'
+            grep -E '^✖' /tmp/js-full.txt 2>/dev/null | head -n 40 || echo "(无 ✖ 行——检查退出原因)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
