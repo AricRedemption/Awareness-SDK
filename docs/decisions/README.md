@@ -19,5 +19,6 @@
 | [F-070](F-070-governance-execution-infrastructure.md) | 治理与 trace 的工程化执行设施：CI / trace 分析器 / A-B 一键化 / 主张校验 | Accepted | 2026-09-06 |
 | [F-071](F-071-gate-text-vs-substance.md) | §3 字面门禁 vs §5 实质非回归：同环境基线 + A/B 零回归证据双条件（**提案**，待上游裁决） | Proposed | 2026-09-06 |
 | [F-072](F-072-trace-phase2-sampling-and-transport-error.md) | trace 二期：采样/频控（min-interval，错误事件永不采样）+ `transport_error` 词表扩展 7→8 | Proposed | 2026-09-07 |
+| [F-073](F-073-claims-evidence-mapping.md) | 主张-证据显式映射文件（CLAIMS.md 模式）：声明式 lint + 撤回生命周期 | Proposed | 2026-09-07 |
 
 新决策：复制任一文件的五节骨架，编号递增，同步更新本表。
