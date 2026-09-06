@@ -38,6 +38,23 @@
   independently exportable.
 - 12 new tests. Total Python SDK: 172 passed, 21 skipped.
 
+### Added — SDK-level trace + governance (F-069)
+- New `memory_cloud.tracing`: JSONL trace writer (M1-compatible envelope
+  `{ts, event, session_id, channel}`, field naming per OTel GenAI semconv,
+  no OTel dependency). Seven events: recall / write / forget / snapshot /
+  restore / conflict_forget / broker_unavailable.
+- Default off (`trace_path` param or `AWARENESS_TRACE_PATH`); hash-only
+  by default (sha256 first-16), `trace_full_content=True` opts in to raw
+  text; writer never throws — I/O failure self-disables it.
+- Wired: client.record/retrieve (daemon + cloud routes, latency_ms),
+  parametric adapter (5 ops + degrade paths), session_migrate
+  (optional `trace=` writer param).
+- Governance: root `GOVERNANCE.md` (dependency boundary, decision
+  ownership, merge gates, defaults policy, claims register),
+  `docs/decisions/` MADR-lite ADRs F-061..F-069,
+  `.github/PULL_REQUEST_TEMPLATE.md` (M1-style gate checklist).
+- 19 new trace tests. Trace-off path covered by full existing suite.
+
 ## [2.6.0] - 2026-04-19
 
 ### Added — F-059 skill fields + F-060 client-side HyDE

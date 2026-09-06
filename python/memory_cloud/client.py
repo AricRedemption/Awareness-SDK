@@ -12,6 +12,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Union
 import requests
 
 from memory_cloud.errors import MemoryCloudError
+from memory_cloud.tracing import resolve_trace_writer, log_recall, log_write
 
 logger = logging.getLogger(__name__)
 
@@ -97,6 +98,10 @@ class MemoryCloudClient:
         # `mode="cloud"` (default) talks REST to the public Awareness Cloud.
         # `mode="auto"` probes the daemon first and falls back to cloud.
         local_url: str = DEFAULT_LOCAL_DAEMON_URL,
+        # F-069 · SDK-level structured trace. Off by default; set a file
+        # path (or AWARENESS_TRACE_PATH env) to enable. See tracing.py.
+        trace_path: Optional[str] = None,
+        trace_full_content: bool = False,
     ):
         self.mode = mode
         # Cloud REST base URL — defaults to the public Awareness Cloud, NEVER to a local dev server.
@@ -113,6 +118,10 @@ class MemoryCloudClient:
         self.default_source = default_source
         self._session_cache: Dict[str, str] = {}
 
+        # F-069 · structured trace: NullTraceWriter (no-op) unless enabled.
+        self.trace_full_content = trace_full_content
+        self._trace_writer = resolve_trace_writer(trace_path, session_id=session_prefix)
+
         # Auto-extraction config
         self.enable_extraction = enable_extraction or (extraction_llm is not None)
         self._extraction_llm = extraction_llm
@@ -128,6 +137,31 @@ class MemoryCloudClient:
 
         if self._extraction_llm is not None:
             self._llm_type = _detect_llm_type(self._extraction_llm)
+
+    # ----------------------------
+    # Trace emit helpers (F-069) — never throw, no-op when tracing is off
+    # ----------------------------
+    def _trace_recall(self, route: str, results: Any, t0: float, trace_id: Optional[str] = None) -> None:
+        try:
+            items = results if isinstance(results, list) else []
+            log_recall(
+                self._trace_writer,
+                trace_id=trace_id,
+                route=route,
+                hit=bool(items),
+                n_results=len(items),
+                latency_ms=(time.perf_counter() - t0) * 1000.0,
+            )
+        except Exception:
+            pass
+
+    def _trace_write(self, content: Any, trace_id: Optional[str] = None) -> None:
+        try:
+            if content is None:
+                return
+            log_write(self._trace_writer, content=content, full_content=self.trace_full_content)
+        except Exception:
+            pass
 
     # ----------------------------
     # Local daemon bridge (mode="local" / "auto")
@@ -355,10 +389,11 @@ class MemoryCloudClient:
         detail: Progressive disclosure level — "summary" (default server behavior),
             "full", or "debug". Controls how much metadata and context is returned
             per result. Omit to use the server default.
-        ids: Restrict recall to specific record IDs. When provided, only matching
+            ids: Restrict recall to specific record IDs. When provided, only matching
             records are returned (bypasses vector search). Useful for follow-up
             drill-down after an initial broad recall.
         """
+        t0 = time.perf_counter()
         merged: Dict[str, Any] = {
             "limit": limit,
             "reconstruct_chunks": reconstruct_chunks,
@@ -458,6 +493,7 @@ class MemoryCloudClient:
                 daemon_args["hyde_hint"] = hyde_hint.strip()
             daemon_result = self.call_local_daemon("awareness_recall", daemon_args)
             items = daemon_result.get("items") or daemon_result.get("results") or []
+            self._trace_recall("daemon", items, t0, trace_id=trace_id)
             return {"results": items}
 
         payload, resolved_trace_id = self._request(
@@ -466,7 +502,9 @@ class MemoryCloudClient:
             json_payload=body,
             trace_id=trace_id,
         )
-        return self._attach_trace(payload, resolved_trace_id)
+        result = self._attach_trace(payload, resolved_trace_id)
+        self._trace_recall("cloud", result.get("results", []), t0, trace_id=trace_id)
+        return result
 
     def retrieve_with_hyde(
         self,
@@ -662,8 +700,7 @@ class MemoryCloudClient:
                 - dict: single event dict (must have 'content' key)
                 - None: no events (use with insights for insights-only submission)
             insights: Pre-extracted insights dict to submit directly.
-                Keys: knowledge_cards, risks, action_items.
-            scope: Content scope — "timeline" (default) or "knowledge".
+                Keys: knowledge_cards, risks, action_items.            scope: Content scope — "timeline" (default) or "knowledge".
             session_id: Explicit session id. Auto-generated if empty.
             source: Source label. Falls back to client default_source.
             user_id: User id for multi-user memories.
@@ -676,6 +713,7 @@ class MemoryCloudClient:
             Dict with ingest result and/or insights submission result.
         """
         # Local daemon bridge: route through awareness_record MCP tool.
+        t0 = time.perf_counter()
         if self._should_use_daemon():
             args: Dict[str, Any] = {"action": "remember"}
             events_count = 0
@@ -705,6 +743,7 @@ class MemoryCloudClient:
             if agent_role:
                 args["agent_role"] = agent_role
             daemon_result = self.call_local_daemon("awareness_record", args)
+            self._trace_write(content, trace_id=trace_id)
             return {
                 "memory_id": memory_id,
                 "session_id": daemon_result.get("session_id", session_id or ""),
@@ -772,6 +811,7 @@ class MemoryCloudClient:
             if insights_result.get("trace_id") and "trace_id" not in result:
                 result["trace_id"] = insights_result["trace_id"]
 
+        self._trace_write(content, trace_id=trace_id)
         return result
 
     def _build_record_events(

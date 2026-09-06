@@ -35,6 +35,14 @@ import logging
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from memory_cloud.integrations._base import MemoryCloudBaseAdapter
+from memory_cloud.tracing import (
+    log_recall,
+    log_write,
+    log_forget,
+    log_snapshot,
+    log_restore,
+    log_degrade,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -123,6 +131,10 @@ class MemoryCloudParametric(MemoryCloudBaseAdapter):
         """True when a live ``MemoryBroker`` instance is attached."""
         return self._broker is not None
 
+    def _trace(self) -> Any:
+        """The client's trace writer (NullTraceWriter when tracing is off)."""
+        return getattr(self.client, "_trace_writer", None)
+
     def _require_broker(self) -> Any:
         """Return the broker or log a warning and return None."""
         if self._broker is None:
@@ -204,12 +216,21 @@ class MemoryCloudParametric(MemoryCloudBaseAdapter):
         """
         broker = self._require_broker()
         if broker is None:
+            tw = self._trace()
+            if tw is not None:
+                log_degrade(tw, op="parametric_write", reason="broker_unavailable")
             return {"ok": False, "session_id": session_id, "error": "broker_unavailable"}
         try:
             broker.write(session_id, key=key, value=value, update_rule=update_rule)
+            tw = self._trace()
+            if tw is not None:
+                log_write(tw, content=str(value))
             return {"ok": True, "session_id": session_id}
         except Exception as exc:
             logger.warning("parametric_write failed: %s", exc)
+            tw = self._trace()
+            if tw is not None:
+                log_degrade(tw, op="parametric_write", reason=str(exc))
             return {"ok": False, "session_id": session_id, "error": str(exc)}
 
     def parametric_recall(
@@ -227,18 +248,29 @@ class MemoryCloudParametric(MemoryCloudBaseAdapter):
         """
         broker = self._require_broker()
         if broker is None:
+            tw = self._trace()
+            if tw is not None:
+                log_degrade(tw, op="parametric_recall", reason="broker_unavailable")
             return []
         try:
             hits = broker.recall(
                 session_id, query=query, top_k=top_k, candidates=candidates,
             )
-            return [
+            valid = [
                 {"value": val, "score": score}
                 for val, score in hits
                 if val is not None
             ]
+            tw = self._trace()
+            if tw is not None:
+                log_recall(tw, route="parametric", hit=bool(valid),
+                           n_results=len(valid))
+            return valid
         except Exception as exc:
             logger.warning("parametric_recall failed: %s", exc)
+            tw = self._trace()
+            if tw is not None:
+                log_degrade(tw, op="parametric_recall", reason=str(exc))
             return []
 
     def parametric_forget(
@@ -252,12 +284,21 @@ class MemoryCloudParametric(MemoryCloudBaseAdapter):
         """
         broker = self._require_broker()
         if broker is None:
+            tw = self._trace()
+            if tw is not None:
+                log_degrade(tw, op="parametric_forget", reason="broker_unavailable")
             return {"ok": False, "session_id": session_id, "error": "broker_unavailable"}
         try:
             removed = broker.forget(session_id, key=key)
+            tw = self._trace()
+            if tw is not None:
+                log_forget(tw, key=key)
             return {"ok": removed, "session_id": session_id}
         except Exception as exc:
             logger.warning("parametric_forget failed: %s", exc)
+            tw = self._trace()
+            if tw is not None:
+                log_degrade(tw, op="parametric_forget", reason=str(exc))
             return {"ok": False, "session_id": session_id, "error": str(exc)}
 
     def parametric_snapshot(self, session_id: str) -> Optional[Dict[str, Any]]:
@@ -268,11 +309,24 @@ class MemoryCloudParametric(MemoryCloudBaseAdapter):
         """
         broker = self._require_broker()
         if broker is None:
+            tw = self._trace()
+            if tw is not None:
+                log_degrade(tw, op="parametric_snapshot", reason="broker_unavailable")
             return None
         try:
-            return broker.snapshot(session_id)
+            snap = broker.snapshot(session_id)
+            tw = self._trace()
+            if tw is not None and snap is not None:
+                log_snapshot(
+                    tw,
+                    binding_count=len(snap.get("lexicon") or []),
+                )
+            return snap
         except Exception as exc:
             logger.warning("parametric_snapshot failed: %s", exc)
+            tw = self._trace()
+            if tw is not None:
+                log_degrade(tw, op="parametric_snapshot", reason=str(exc))
             return None
 
     def parametric_restore(
@@ -283,12 +337,24 @@ class MemoryCloudParametric(MemoryCloudBaseAdapter):
         """Restore a session from a snapshot dict (inverse of snapshot)."""
         broker = self._require_broker()
         if broker is None:
+            tw = self._trace()
+            if tw is not None:
+                log_degrade(tw, op="parametric_restore", reason="broker_unavailable")
             return {"ok": False, "session_id": session_id, "error": "broker_unavailable"}
         try:
             broker.restore(session_id, snapshot)
+            tw = self._trace()
+            if tw is not None:
+                log_restore(
+                    tw,
+                    binding_count=len(snapshot.get("lexicon") or []),
+                )
             return {"ok": True, "session_id": session_id}
         except Exception as exc:
             logger.warning("parametric_restore failed: %s", exc)
+            tw = self._trace()
+            if tw is not None:
+                log_degrade(tw, op="parametric_restore", reason=str(exc))
             return {"ok": False, "session_id": session_id, "error": str(exc)}
 
     def parametric_state_bytes(self, session_id: str) -> int:

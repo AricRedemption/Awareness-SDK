@@ -37,6 +37,8 @@ import zipfile
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
+from memory_cloud.tracing import log_snapshot, log_restore
+
 logger = logging.getLogger(__name__)
 
 _MIGRATE_FORMAT = "parametric-session-migrate-v1"
@@ -46,6 +48,7 @@ def export_session(
     broker: Any,
     session_id: str,
     output_path: str,
+    trace: Optional[Any] = None,
 ) -> str:
     """Export a parametric session to a zip archive.
 
@@ -62,6 +65,8 @@ def export_session(
         broker: A MemoryBroker-like object with snapshot() and sessions().
         session_id: The session to export.
         output_path: Where to write the zip file.
+        trace: Optional trace writer (e.g. ``client._trace_writer``); a
+            ``snapshot`` event is emitted on success (F-069).
 
     Returns:
         The output path.
@@ -92,6 +97,12 @@ def export_session(
         jsonl_lines = "\n".join(json.dumps(b, ensure_ascii=False) for b in bindings)
         zf.writestr("parametric/bindings.jsonl", jsonl_lines + "\n" if jsonl_lines else "")
 
+    if trace is not None:
+        try:
+            log_snapshot(trace, binding_count=len(bindings))
+        except Exception:
+            pass  # trace must never break migration
+
     logger.info("Exported session %s to %s (%d bindings)",
                 session_id, output_path, len(bindings))
     return output_path
@@ -101,6 +112,7 @@ def import_session(
     broker: Any,
     session_id: str,
     input_path: str,
+    trace: Optional[Any] = None,
 ) -> Dict[str, Any]:
     """Import a parametric session from a zip archive.
 
@@ -116,6 +128,8 @@ def import_session(
         broker: A MemoryBroker-like object with restore().
         session_id: The session id to restore into.
         input_path: Path to the zip archive.
+        trace: Optional trace writer; a ``restore`` event is emitted on
+            success (F-069).
 
     Returns:
         A dict with ``ok``, ``session_id``, ``binding_count``, and ``manifest``.
@@ -149,6 +163,12 @@ def import_session(
     broker.restore(session_id, snapshot)
 
     binding_count = manifest.get("binding_count", 0)
+    if trace is not None:
+        try:
+            log_restore(trace, binding_count=binding_count)
+        except Exception:
+            pass  # trace must never break migration
+
     logger.info("Imported session %s from %s (%d bindings)",
                 session_id, input_path, binding_count)
 
