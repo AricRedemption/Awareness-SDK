@@ -259,14 +259,18 @@ class MemoryCloudParametric(MemoryCloudBaseAdapter):
             # Duck-type the broker's recall return shape:
             # - M1's ParametricMemory returns List[Tuple[value, score]]
             # - Friendly brokers may return List[{"value": ..., "score": ...}]
-            # Both must work — SDK does not pin a shape, only the per-item
+            # - Structured hit objects (e.g. the feat/consolidation-policy
+            #   RecallHit) expose .value/.score attributes
+            # All must work — SDK does not pin a shape, only the per-item
             # fields {value, score} (or their tuple positions).
             valid: List[Dict[str, Any]] = []
             for h in hits:
                 if isinstance(h, dict):
                     val, score = h.get("value"), h.get("score")
-                else:
+                elif isinstance(h, (tuple, list)):
                     val, score = h[0], h[1]
+                else:
+                    val, score = getattr(h, "value", None), getattr(h, "score", None)
                 if val is not None:
                     valid.append({"value": val, "score": score})
             tw = self._trace()

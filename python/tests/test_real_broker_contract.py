@@ -195,3 +195,25 @@ def test_adapter_uses_policy_write_when_available():
     # — exercised via parametric-hooks.mjs (separate test file).
     # This test just confirms the contract is discoverable.
     assert hasattr(broker, "policyWrite")
+
+
+def test_adapter_accepts_attribute_style_hits():
+    """feat/consolidation-policy 的 RecallHit 是属性式命中对象（.value/.score），
+    无 tuple/dict 协议——SDK 的 duck-typing 必须吃下它（联调前置条件，
+    见 M1-iteration/docs/consolidation-policy-branch-intel.md §3）。"""
+    class _RecallHit:
+        def __init__(self, value, score):
+            self.value, self.score = value, score
+
+    class _AttrBroker:
+        """recall 返回属性式命中对象的 broker（不走 _dev_stubs）。"""
+
+        def recall(self, session_id, query=None, top_k=5, candidates=None):
+            return [_RecallHit("blue", 0.9), _RecallHit(None, 0.2)]
+
+    adapter = MemoryCloudParametric(
+        client=_mock_cloud_client(), memory_id="m", broker=_AttrBroker(),
+    )
+    out = adapter.parametric_recall("s1", query="color", top_k=2)
+    assert [h["value"] for h in out] == ["blue"], "None 值过滤生效"
+    assert out[0]["score"] == 0.9
