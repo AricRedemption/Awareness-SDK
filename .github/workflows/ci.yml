@@ -1,0 +1,80 @@
+name: CI
+
+# 治理工程化（F-070）：GOVERNANCE §3 门禁的机械执行层。
+# 参考姊妹仓 M1 的 ci.yml 门禁纪律；JS 侧分两层——
+#   1. PR 相关套件（parametric first-hop / hooks / unified-cascade-search）为阻塞门禁；
+#   2. 全量 JS 套件当前存在 sync 带来的存量失败（~23，属上游 Awareness-Market 同步缺口，
+#      修复责任在上游 sync），先以非阻塞方式持续暴露，不静默跳过。
+# LongMemEval 基准不进 CI（277MB 数据集 + ~17 分钟/轮），按 GOVERNANCE §3 走
+# benchmarks/longmemeval/run_ab.sh 人工触发、产物入库。
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  python-tests:
+    name: Python 全量测试（含 trace 19 例）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install test dependencies
+        run: pip install pytest requests pydantic
+      - name: Import + trace smoke test
+        working-directory: python
+        run: python scripts/ci_trace_smoke.py
+      - name: Run full test suite
+        working-directory: python
+        run: python -m pytest tests/ --ignore=tests/test_sdk_functional.py -q
+        # test_sdk_functional.py 需要 live server（localhost:8000），为存量环境性排除，
+        # 见 HANDOFF 与 PR #1 说明。
+
+  claims-register:
+    name: 主张登记簿校验（GOVERNANCE §7）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Check claims register
+        run: python3 scripts/check_claims.py --verbose
+
+  js-pr-gate:
+    name: JS PR 相关套件（50 例门禁）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install dependencies
+        working-directory: local
+        run: npm ci
+      - name: PR-relevant suite (parametric first-hop / hooks / cascade)
+        working-directory: local
+        run: node --test test/parametric-first-hop.test.mjs test/parametric-hooks.test.mjs test/unified-cascade-search.test.mjs
+
+  js-full-suite:
+    name: JS 全量套件（非阻塞 · 存量失败跟踪）
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install dependencies
+        working-directory: local
+        run: npm ci
+      - name: Full JS suite
+        working-directory: local
+        run: node --test test/*.test.mjs
+      - name: Failure report
+        if: failure()
+        working-directory: local
+        run: node --test test/*.test.mjs 2>&1 | grep -E "^✖" | head -40 || true
