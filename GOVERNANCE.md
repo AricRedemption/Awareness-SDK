@@ -70,8 +70,8 @@ docs/decisions/（MADR 决策记录，谱系） ◀── python/memory_cloud/tr
 
 | 主张 | 状态 | 复现命令 | 产物/依据 |
 |---|---|---|---|
-| LongMemEval R@5 基线 96.0（关闭首跳） | 基线（沿用既有基准） | `node src/benchmark/recall-eval.mjs`（local/） | `benchmarks/longmemeval/FIRST_HOP_NONREGRESSION.md` |
-| 首跳开启后 R@5 不低于基线 | **non-regression pending** | 同上 | 同上 |
+| LongMemEval R@5 基线 96.0（关闭首跳） | 基线（沿用既有基准；本环境复测 95.8，见下条） | `node run_f053_daemon_path.mjs`（benchmarks/longmemeval/，500Q，数据集见该文件头） | `benchmarks/longmemeval/FIRST_HOP_NONREGRESSION.md` |
+| 首跳开启后 R@5 不低于基线 | **绝对门禁未达成（2026-09-06 本环境 95.8 < 96.0，差 1 题）；同环境 A/B（fork/main 对照）500 题逐题位算等价，PR 零回归实证。0.2pp 为环境漂移（transformers.js 3.8.1 vs 基线期版本）。PR 保持 Draft，待上游环境复跑裁决** | 分支与对照组命令见 FIRST_HOP_NONREGRESSION.md "How to reproduce" | `benchmarks/longmemeval/results_f053_daemon_path_n500_b999000000.json`（分支）+ `results_f053_daemon_path_n500_base-forkmain.json`（对照组） |
 | 参数化层 O(1) 热区读取、精确绑定 | 设计主张（非本仓实测） | — | M1 `docs/PARAMETRIC_MEMORY.md`；本仓未独立复测，引用时须注明出处 |
 | 会话迁移 bit-exact | 单测级验证（mock broker） | `pytest tests/test_session_migrate.py` | 测试文件；真实 broker 联调后升级 |
 
