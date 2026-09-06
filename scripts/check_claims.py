@@ -74,6 +74,7 @@ SCAN_TARGETS = (
     "setup-cli/README.md",
     "claudecode/README.md",
     "opencode/README.md",
+    "browser-extension/README.md",
 )
 
 # 第三方对比目标：markdown 表格行内出现这些名字时，行内数字视为已标注出处
