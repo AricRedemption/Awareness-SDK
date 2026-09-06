@@ -55,6 +55,32 @@
   `.github/PULL_REQUEST_TEMPLATE.md` (M1-style gate checklist).
 - 19 new trace tests. Trace-off path covered by full existing suite.
 
+### Added — governance execution infrastructure (F-070)
+- `scripts/analyze_trace.py`: aggregate a trace JSONL into the GOVERNANCE §6
+  evidence numbers (recall hit-rate by route, `broker_unavailable` frequency
+  by op/reason, latency p50/p95). Stdlib only; malformed lines are skipped
+  and counted; unknown events degrade to an `other` bucket. 8 tests.
+- `MemoryTraceWriter` optional `max_bytes` rotation (single `<path>.1` slot,
+  default off, `AWARENESS_TRACE_MAX_BYTES` env supported). Rotation failure
+  follows the never-throw self-disable path. 4 new rotation tests.
+- `scripts/check_claims.py`: mechanical GOVERNANCE §7 claims-register check —
+  README number claims must be registered (or in a §7-pointed artifact) or
+  carry a visible source; wired into CI.
+- `.github/workflows/ci.yml`: Python full suite + import/trace smoke +
+  claims check as blocking jobs; JS two-tier (PR-relevant 50 blocking,
+  full suite non-blocking while upstream sync gaps are open).
+- `benchmarks/longmemeval/run_f053_daemon_path.mjs` now lives in-repo
+  (previously only in Awareness-Market; sole change = SDK path for this
+  layout) plus `run_ab.sh`, a same-environment A/B gate rerun helper
+  (base worktree + dual run + per-question diff).
+
+### Fixed
+- `examples/parametric_quickstart.py`: the no-broker demo used a MagicMock
+  client, so `AWARENESS_TRACE_PATH` was never consumed and the demo could
+  not show trace output. It now uses a real client (parametric ops never
+  dial HTTP) — graceful degradation is observable: broker_unavailable
+  events land in the trace file, with an `analyze_trace.py` hint printed.
+
 ## [2.6.0] - 2026-04-19
 
 ### Added — F-059 skill fields + F-060 client-side HyDE
