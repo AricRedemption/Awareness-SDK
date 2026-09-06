@@ -17,5 +17,6 @@
 | [F-068](F-068-bit-exact-parametric-only.md) | bit-exact 保证只覆盖参数化层 | Accepted | 2026-09-06 |
 | [F-069](F-069-sdk-trace-design.md) | SDK 级 trace：M1 信封 + OTel 字段映射 + opt-in hash-only；设立本治理体系 | Accepted | 2026-09-06 |
 | [F-070](F-070-governance-execution-infrastructure.md) | 治理与 trace 的工程化执行设施：CI / trace 分析器 / A-B 一键化 / 主张校验 | Accepted | 2026-09-06 |
+| [F-071](F-071-gate-text-vs-substance.md) | §3 字面门禁 vs §5 实质非回归：同环境基线 + A/B 零回归证据双条件 | Accepted | 2026-09-06 |
 
 新决策：复制任一文件的五节骨架，编号递增，同步更新本表。
