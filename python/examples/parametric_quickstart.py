@@ -13,6 +13,8 @@ Run::
 
 from unittest.mock import MagicMock
 
+import os
+
 from memory_cloud import MemoryCloudClient
 from memory_cloud.integrations.parametric import MemoryCloudParametric
 
@@ -28,10 +30,17 @@ def _mock_cloud_client() -> MemoryCloudClient:
 
 
 def main() -> None:
-    client = _mock_cloud_client()
-
-    # --- Without a broker: graceful degradation ----------------------------
-    mc = MemoryCloudParametric(client=client, memory_id="mem-demo")
+    # --- Without a broker: graceful degradation, with REAL trace output -----
+    # A real client (not a mock) so the F-069 trace writer is real too: set
+    # AWARENESS_TRACE_PATH and the broker_unavailable events below land in a
+    # file you can inspect — "silently degraded" becomes observable (F-062).
+    # Parametric ops never dial HTTP (the dead base_url is a guard), and
+    # session_id is passed explicitly so no session bootstrap happens.
+    trace_path = os.environ.get("AWARENESS_TRACE_PATH", "")
+    real_client = MemoryCloudClient(base_url="http://127.0.0.1:1")
+    mc = MemoryCloudParametric(
+        client=real_client, memory_id="mem-demo", session_id="sess-demo",
+    )
     print(f"broker_available: {mc.broker_available}")
     print(f"source: {mc.source}")
     print(f"session_id: {mc.session_id}")
@@ -45,6 +54,10 @@ def main() -> None:
 
     snap = mc.parametric_snapshot("s1")
     print(f"snapshot (no broker): {snap}")
+
+    if trace_path:
+        print(f"\ntrace written to {trace_path} (3× broker_unavailable expected)")
+        print(f"inspect with: python scripts/analyze_trace.py {trace_path}")
 
     # --- With a broker (if mt_lnn.memory_broker is installed) --------------
     if mc.broker_available:
@@ -72,9 +85,14 @@ def main() -> None:
         print("Install with: pip install 'awareness-memory-cloud[parametric]'")
 
     # --- Shared surface (works with or without broker) ---------------------
-    tools = mc.get_tool_functions()
+    # memory_search dials the daemon/cloud, so a mock keeps this last demo
+    # runnable on any machine.
+    mock_mc = MemoryCloudParametric(
+        client=_mock_cloud_client(), memory_id="mem-demo", session_id="sess-demo",
+    )
+    tools = mock_mc.get_tool_functions()
     print(f"\ntool functions: {[t['name'] for t in tools]}")
-    print(f"memory_search: {mc.memory_search('test query')}")
+    print(f"memory_search: {mock_mc.memory_search('test query')}")
 
 
 if __name__ == "__main__":

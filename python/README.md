@@ -343,6 +343,41 @@ if result.get("perception"):
 
 ---
 
+## Structured Trace (F-069)
+
+Memory operations can emit a structured JSONL trace — the runtime evidence
+consumed by [`GOVERNANCE.md`](../GOVERNANCE.md) §5/§6 (recall routes/hits/
+latency, broker-degradation frequency). **Off by default**; opt in per
+process:
+
+```bash
+export AWARENESS_TRACE_PATH=/tmp/awareness-trace.jsonl
+python -m examples.parametric_quickstart
+# → 3× broker_unavailable events (graceful degradation is observable, F-062)
+```
+
+or per client: `MemoryCloudClient(base_url=..., trace_path=...)`.
+
+- **Envelope**: `{ts, event, session_id, channel, ...fields}` — same shape as
+  M1's `JsonlMetricWriter`, joinable by `session_id`.
+- **Hash-only by default**: content is recorded as `content_hash` (sha256,
+  first 16 hex) + `content_bytes`; `trace_full_content=True` (or the
+  constructor param) opts in to raw text.
+- **Never throws**: a broken trace file disables the writer, never memory ops.
+- **Vocabulary** (7 events, changes require an ADR per F-069): `recall`,
+  `write`, `forget`, `snapshot`, `restore`, `conflict_forget`,
+  `broker_unavailable`.
+- **Rotation** (optional): `AWARENESS_TRACE_MAX_BYTES` (or `max_bytes=`)
+  keeps one `<path>.1` rotation.
+
+Aggregate a trace into the GOVERNANCE §6 evidence numbers:
+
+```bash
+python scripts/analyze_trace.py /tmp/awareness-trace.jsonl
+```
+
+---
+
 ## API Coverage
 
 `MemoryCloudClient` includes:

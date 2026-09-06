@@ -235,3 +235,57 @@ def test_helpers_never_raise_on_disabled_writer(tmp_path):
     w._disable()
     log_recall(w, route="cascade")
     log_write(w, content="x")  # all silently dropped, none raise
+
+
+# ------------------------------------------------------------------
+# Rotation (F-070): max_bytes + AWARENESS_TRACE_MAX_BYTES
+# ------------------------------------------------------------------
+
+def test_rotation_off_by_default(tmp_path):
+    p = tmp_path / "t.jsonl"
+    w = MemoryTraceWriter(str(p))
+    for _ in range(5):
+        w.write("write")
+    w.close()
+    assert p.exists() and not (tmp_path / "t.jsonl.1").exists()
+    assert len(_read_lines(p)) == 5
+
+
+def test_rotation_on_max_bytes(tmp_path):
+    p = tmp_path / "t.jsonl"
+    w = MemoryTraceWriter(str(p), max_bytes=120)
+    for i in range(8):
+        w.write("write", {"i": i})
+    assert w.disabled is False, "rotation must not self-disable a healthy writer"
+    w.close()
+    rotated = tmp_path / "t.jsonl.1"
+    assert rotated.exists(), "rotation should have produced <path>.1"
+    first = _read_lines(rotated)
+    second = _read_lines(p)
+    # Single-slot rotation (documented): .1 holds the last rotated file —
+    # earlier rotations are replaced, not accumulated.
+    assert first and second, "both slots should have content"
+    assert all(r["event"] == "write" for r in first + second)
+
+
+def test_rotation_failure_self_disables_never_raises(tmp_path):
+    # os.replace on a path whose parent vanishes mid-flight → rotation fails;
+    # the writer must disable itself, never raise.
+    p = tmp_path / "t.jsonl"
+    w = MemoryTraceWriter(str(p), max_bytes=1)
+    w.write("write")  # over 1 byte already, but rotation happens on next write
+    # Simulate rotation failure: make the existing file undeletable-replaceable
+    # by pointing .1 at a directory (os.replace onto a directory raises).
+    (tmp_path / "t.jsonl.1").mkdir()
+    w.write("write")  # triggers rotation → replace file onto dir → error → disable
+    assert w.disabled is True
+    w.write("write")  # no-op, must not raise
+
+
+def test_env_max_bytes_resolves(monkeypatch, tmp_path):
+    monkeypatch.setenv("AWARENESS_TRACE_MAX_BYTES", "not-a-number")
+    w = resolve_trace_writer(str(tmp_path / "t.jsonl"))
+    assert isinstance(w, MemoryTraceWriter) and w.max_bytes is None
+    monkeypatch.setenv("AWARENESS_TRACE_MAX_BYTES", "4096")
+    w = resolve_trace_writer(str(tmp_path / "t2.jsonl"))
+    assert w.max_bytes == 4096

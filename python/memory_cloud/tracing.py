@@ -39,6 +39,7 @@ from typing import Any, Dict, Optional
 CHANNEL = "memory_trace"
 
 ENV_TRACE_PATH = "AWARENESS_TRACE_PATH"
+ENV_TRACE_MAX_BYTES = "AWARENESS_TRACE_MAX_BYTES"
 
 
 def _hash16(text: str) -> str:
@@ -74,11 +75,18 @@ class MemoryTraceWriter:
     static fields (channel, session_id) are stamped into every event.
     On any I/O failure the writer disables itself permanently — a broken
     trace must never break memory operations.
+
+    ``max_bytes`` (optional, default off) rotates the file once its size
+    reaches the limit: the current file is moved to ``<path>.1`` (replacing
+    any previous rotation) and writing continues on a fresh file.  A failed
+    rotation counts as an I/O failure — the writer disables itself.
     """
 
-    def __init__(self, path: str, session_id: str = "default"):
+    def __init__(self, path: str, session_id: str = "default",
+                 max_bytes: Optional[int] = None):
         self.path = path
         self.session_id = session_id
+        self.max_bytes = max_bytes
         self._static = {"channel": CHANNEL, "session_id": session_id}
         self._lock = threading.Lock()
         self._disabled = False
@@ -104,10 +112,23 @@ class MemoryTraceWriter:
             row.update(fields)
         try:
             with self._lock:
+                if self.max_bytes is not None and self._fh.tell() >= self.max_bytes:
+                    self._rotate_locked()
+                    if self._fh is None:
+                        return
                 self._fh.write(json.dumps(row, ensure_ascii=False, default=str) + "\n")
                 self._fh.flush()
         except Exception:
             self._disable()
+
+    def _rotate_locked(self) -> None:
+        """Rotate to <path>.1. Caller holds the lock; raises on I/O failure
+        (write() converts that into self-disable — never throws)."""
+        assert self._fh is not None
+        self._fh.close()
+        self._fh = None
+        os.replace(self.path, self.path + ".1")
+        self._fh = open(self.path, "a", encoding="utf-8")
 
     def _disable(self) -> None:
         self._disabled = True
@@ -135,15 +156,24 @@ class MemoryTraceWriter:
 def resolve_trace_writer(
     trace_path: Optional[str] = None,
     session_id: str = "default",
+    max_bytes: Optional[int] = None,
 ) -> Any:
     """Return a MemoryTraceWriter when tracing is on, else the Null no-op.
 
     Precedence: explicit ``trace_path`` > ``AWARENESS_TRACE_PATH`` env > off.
+    Rotation limit: explicit ``max_bytes`` > ``AWARENESS_TRACE_MAX_BYTES``
+    env (integer) > no rotation.  Invalid env values are ignored (off).
     """
     path = trace_path or os.environ.get(ENV_TRACE_PATH) or ""
     if not path.strip():
         return NullTraceWriter()
-    return MemoryTraceWriter(path.strip(), session_id=session_id)
+    if max_bytes is None:
+        raw = os.environ.get(ENV_TRACE_MAX_BYTES, "")
+        try:
+            max_bytes = int(raw) if raw.strip() else None
+        except ValueError:
+            max_bytes = None
+    return MemoryTraceWriter(path.strip(), session_id=session_id, max_bytes=max_bytes)
 
 
 # ---------------------------------------------------------------------------
