@@ -80,9 +80,33 @@ def main() -> None:
         mc.parametric_forget("s1", key="favorite color")
         hits_after_forget = mc.parametric_recall("s1", query="favorite color", top_k=3)
         print(f"recall after forget 'favorite color': {hits_after_forget}")
+    elif os.environ.get("AWARENESS_USE_DEV_BROKER") == "1":
+        # Dev-only path: use the SDK's bundled stub broker to exercise the
+        # full integration contract before M1 publishes memory_broker.
+        # The stub is a pure-Python mirror of ParametricMemory's 7-method
+        # surface; it is NOT a semantic-recall engine and will be deleted
+        # once the real broker ships.
+        print("\n--- Dev stub broker (AWARENESS_USE_DEV_BROKER=1) ---")
+        from memory_cloud._dev_stubs.broker import MemoryBroker as _DevBroker
+        stub = _DevBroker(d_mem=64)
+        mc = MemoryCloudParametric(
+            client=real_client, memory_id="mem-demo", session_id="sess-demo",
+            broker=stub,
+        )
+        print(f"broker_available: {mc.broker_available} (dev stub)")
+        mc.parametric_write("s1", key="favorite color", value="blue")
+        mc.parametric_write("s1", key="favorite food", value="sushi")
+        hits = mc.parametric_recall("s1", query="favorite color", top_k=3)
+        print(f"recall 'favorite color': {hits}")
+        snap = mc.parametric_snapshot("s1")
+        mc.parametric_forget("s1")
+        assert mc.parametric_recall("s1", query="favorite color") == []
+        mc.parametric_restore("s1", snap)
+        print(f"recall after restore: {mc.parametric_recall('s1', query='favorite color', top_k=3)}")
     else:
         print("\nmt_lnn.memory_broker not installed — skipping live operations.")
         print("Install with: pip install 'awareness-memory-cloud[parametric]'")
+        print("Or, for dev-only end-to-end demo: AWARENESS_USE_DEV_BROKER=1 python -m examples.parametric_quickstart")
 
     # --- Shared surface (works with or without broker) ---------------------
     # memory_search dials the daemon/cloud, so a mock keeps this last demo

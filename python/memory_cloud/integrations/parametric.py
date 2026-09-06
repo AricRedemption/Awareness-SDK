@@ -256,11 +256,19 @@ class MemoryCloudParametric(MemoryCloudBaseAdapter):
             hits = broker.recall(
                 session_id, query=query, top_k=top_k, candidates=candidates,
             )
-            valid = [
-                {"value": val, "score": score}
-                for val, score in hits
-                if val is not None
-            ]
+            # Duck-type the broker's recall return shape:
+            # - M1's ParametricMemory returns List[Tuple[value, score]]
+            # - Friendly brokers may return List[{"value": ..., "score": ...}]
+            # Both must work — SDK does not pin a shape, only the per-item
+            # fields {value, score} (or their tuple positions).
+            valid: List[Dict[str, Any]] = []
+            for h in hits:
+                if isinstance(h, dict):
+                    val, score = h.get("value"), h.get("score")
+                else:
+                    val, score = h[0], h[1]
+                if val is not None:
+                    valid.append({"value": val, "score": score})
             tw = self._trace()
             if tw is not None:
                 log_recall(tw, route="parametric", hit=bool(valid),
