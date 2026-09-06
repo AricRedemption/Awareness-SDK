@@ -23,7 +23,8 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install test dependencies
-        run: pip install pytest requests pydantic
+        run: pip install pytest requests pydantic numpy
+        # numpy: _dev_stubs/parametric_memory.py (contract-test stub) uses it
       - name: Import + trace smoke test
         working-directory: python
         run: python scripts/ci_trace_smoke.py
