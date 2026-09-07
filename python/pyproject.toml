@@ -72,3 +72,6 @@ dev = [
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["memory_cloud*"]
+
+[tool.setuptools.package-data]
+memory_cloud = ["py.typed"]
