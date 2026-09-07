@@ -99,7 +99,7 @@ def export_session(
 
     if trace is not None:
         try:
-            log_snapshot(trace, binding_count=len(bindings))
+            log_snapshot(trace, binding_count=len(bindings), session_id=session_id)
         except Exception:
             pass  # trace must never break migration
 
@@ -165,7 +165,7 @@ def import_session(
     binding_count = manifest.get("binding_count", 0)
     if trace is not None:
         try:
-            log_restore(trace, binding_count=binding_count)
+            log_restore(trace, binding_count=binding_count, session_id=session_id)
         except Exception:
             pass  # trace must never break migration
 

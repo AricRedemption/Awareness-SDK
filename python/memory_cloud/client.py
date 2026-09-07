@@ -141,7 +141,8 @@ class MemoryCloudClient:
     # ----------------------------
     # Trace emit helpers (F-069) — never throw, no-op when tracing is off
     # ----------------------------
-    def _trace_recall(self, route: str, results: Any, t0: float, trace_id: Optional[str] = None) -> None:
+    def _trace_recall(self, route: str, results: Any, t0: float, trace_id: Optional[str] = None,
+                      session_id: Optional[str] = None) -> None:
         try:
             items = results if isinstance(results, list) else []
             log_recall(
@@ -151,15 +152,18 @@ class MemoryCloudClient:
                 hit=bool(items),
                 n_results=len(items),
                 latency_ms=(time.perf_counter() - t0) * 1000.0,
+                session_id=session_id,
             )
         except Exception:
             pass
 
-    def _trace_write(self, content: Any, trace_id: Optional[str] = None) -> None:
+    def _trace_write(self, content: Any, trace_id: Optional[str] = None,
+                     session_id: Optional[str] = None) -> None:
         try:
             if content is None:
                 return
-            log_write(self._trace_writer, content=content, full_content=self.trace_full_content)
+            log_write(self._trace_writer, content=content, full_content=self.trace_full_content,
+                      session_id=session_id)
         except Exception:
             pass
 
@@ -743,7 +747,8 @@ class MemoryCloudClient:
             if agent_role:
                 args["agent_role"] = agent_role
             daemon_result = self.call_local_daemon("awareness_record", args)
-            self._trace_write(content, trace_id=trace_id)
+            self._trace_write(content, trace_id=trace_id,
+                              session_id=daemon_result.get("session_id") or session_id or None)
             return {
                 "memory_id": memory_id,
                 "session_id": daemon_result.get("session_id", session_id or ""),
@@ -811,7 +816,7 @@ class MemoryCloudClient:
             if insights_result.get("trace_id") and "trace_id" not in result:
                 result["trace_id"] = insights_result["trace_id"]
 
-        self._trace_write(content, trace_id=trace_id)
+        self._trace_write(content, trace_id=trace_id, session_id=active_session or None)
         return result
 
     def _build_record_events(

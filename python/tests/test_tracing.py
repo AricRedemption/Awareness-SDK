@@ -289,3 +289,28 @@ def test_env_max_bytes_resolves(monkeypatch, tmp_path):
     monkeypatch.setenv("AWARENESS_TRACE_MAX_BYTES", "4096")
     w = resolve_trace_writer(str(tmp_path / "t2.jsonl"))
     assert w.max_bytes == 4096
+
+
+# ------------------------------------------------------------------
+# F-075 · session_id override (real memory session id beats client prefix)
+# ------------------------------------------------------------------
+
+
+def test_log_helpers_session_id_override(tmp_path):
+    path = str(tmp_path / "trace.jsonl")
+    w = MemoryTraceWriter(path, session_id="sdk")  # client prefix as static
+    log_write(w, content="x", session_id="sdk-parametric-m1-20260906-ab12")
+    log_recall(w, route="parametric", hit=True, session_id="sess-broker")
+    log_degrade(w, op="op", reason="r", session_id="sess-broker")
+    rows = _read_lines(path)
+    assert rows[0]["session_id"] == "sdk-parametric-m1-20260906-ab12"
+    assert rows[1]["session_id"] == "sess-broker"
+    assert rows[2]["session_id"] == "sess-broker"
+
+
+def test_log_helpers_without_session_id_keep_static(tmp_path):
+    path = str(tmp_path / "trace.jsonl")
+    w = MemoryTraceWriter(path, session_id="sdk")
+    log_write(w, content="x")
+    row = _read_lines(path)[0]
+    assert row["session_id"] == "sdk"

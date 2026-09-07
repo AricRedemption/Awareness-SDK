@@ -185,6 +185,7 @@ def resolve_trace_writer(
 def log_recall(
     writer: Any,
     *,
+    session_id: Optional[str] = None,
     trace_id: Optional[str] = None,
     route: str = "cascade",
     hit: bool = False,
@@ -202,12 +203,15 @@ def log_recall(
         fields["trace_id"] = trace_id
     if latency_ms is not None:
         fields["latency_ms"] = round(latency_ms, 3)
+    if session_id:
+        fields["session_id"] = session_id  # override client-prefix static
     writer.write("recall", fields)
 
 
 def log_write(
     writer: Any,
     *,
+    session_id: Optional[str] = None,
     trace_id: Optional[str] = None,
     content: Any = "",
     full_content: bool = False,
@@ -216,19 +220,25 @@ def log_write(
     fields.update(_content_fields(content, full_content))
     if trace_id:
         fields["trace_id"] = trace_id
+    if session_id:
+        fields["session_id"] = session_id  # override client-prefix static
     writer.write("write", fields)
 
 
-def log_forget(writer: Any, *, key: Any = None) -> None:
+def log_forget(writer: Any, *, key: Any = None,
+               session_id: Optional[str] = None) -> None:
     fields: Dict[str, Any] = {"gen_ai.operation.name": "memory.forget"}
     if key is not None:
         fields["key_hash"] = _hash16(str(key))
+    if session_id:
+        fields["session_id"] = session_id  # override client-prefix static
     writer.write("forget", fields)
 
 
 def log_snapshot(
     writer: Any,
     *,
+    session_id: Optional[str] = None,
     binding_count: Optional[int] = None,
     state_bytes: Optional[int] = None,
 ) -> None:
@@ -237,12 +247,15 @@ def log_snapshot(
         fields["binding_count"] = binding_count
     if state_bytes is not None:
         fields["state_bytes"] = state_bytes
+    if session_id:
+        fields["session_id"] = session_id  # override client-prefix static
     writer.write("snapshot", fields)
 
 
 def log_restore(
     writer: Any,
     *,
+    session_id: Optional[str] = None,
     binding_count: Optional[int] = None,
     state_bytes: Optional[int] = None,
 ) -> None:
@@ -251,12 +264,15 @@ def log_restore(
         fields["binding_count"] = binding_count
     if state_bytes is not None:
         fields["state_bytes"] = state_bytes
+    if session_id:
+        fields["session_id"] = session_id  # override client-prefix static
     writer.write("restore", fields)
 
 
 def log_conflict_forget(
     writer: Any,
     *,
+    session_id: Optional[str] = None,
     old_key: Any = None,
     new_key: Any = None,
 ) -> None:
@@ -272,9 +288,15 @@ def log_conflict_forget(
         fields["old_key_hash"] = _hash16(str(old_key))
     if new_key is not None:
         fields["new_key_hash"] = _hash16(str(new_key))
+    if session_id:
+        fields["session_id"] = session_id  # override client-prefix static
     writer.write("conflict_forget", fields)
 
 
-def log_degrade(writer: Any, *, op: str, reason: str) -> None:
+def log_degrade(writer: Any, *, op: str, reason: str,
+                session_id: Optional[str] = None) -> None:
     """Any silent-degradation path emits this — degradation must be observable."""
-    writer.write("broker_unavailable", {"op": op, "reason": reason})
+    fields = {"op": op, "reason": reason}
+    if session_id:
+        fields["session_id"] = session_id  # override client-prefix static
+    writer.write("broker_unavailable", fields)

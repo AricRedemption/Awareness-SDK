@@ -42,9 +42,11 @@
 
 ### 已踩坑
 - `gh pr edit` 走 GraphQL 报 Projects classic deprecation 错 → **用 `gh api repos/.../pulls/1 -X PATCH -F body=@file` REST 通道**
+- **PR 翻 Ready 不能用 REST PATCH `draft:false`**（draft→ready 单向，API 静默不生效）→ 必须用 GraphQL mutation `markPullRequestReadyForReview(input:{pullRequestId})`，node_id 从 `gh api repos/.../pulls/1 --jq .node_id` 取
+- **package.json/lock 同步后必须 `npm install`**：否则 `@noble/hashes` 等缺失会让 anchoring/card-digest 等文件整文件失败，伪装成大面积回归（2026-09-06 triage 实录，见 `docs/js-suite-triage-20260906.md`）
 - `node --test` 必须从 `local/` 目录跑；pytest 必须从 `python/` 目录跑（rootdir 由 pyproject.toml 定）
-- 本机 Homebrew python 无 pytest/requests，已 `pip3 install --break-system-packages pytest requests pydantic`
-- rtk 环境下 pytest/node 输出可能被截断 → 重定向到文件再读
+- 本机 Homebrew python 无 pytest/requests，已 `pip3 install --break-system-packages pytest requests pydantic numpy`
+- rtk 环境下 pytest/node 输出可能被截断 → 重定向到文件再读；`node --test` 的 TAP 在 **stdout**
 - `test_sdk_functional.py` 的 20 个 error 是**存量环境问题**（需 live server localhost:8000），已用 git stash 双向验证与本次变更无关——不要误判为新回归
 - mock client（MagicMock）上 `getattr(client, "_trace_writer")` 返回 auto-Mock，trace emit 在既有 mock 测试里是无害调用——新增接入点时保持这个模式即可
 
