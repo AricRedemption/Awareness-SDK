@@ -35,5 +35,7 @@
 | 编号 | 标题 | 状态 | 日期 |
 |---|---|---|---|
 | [ADR-001](ADR-001-decision-namespace-split.md) | 决策记录命名空间分离：冻结 F-编号，启用 ADR- 前缀 | Accepted | 2026-09-07 |
+| [ADR-002](ADR-002-automation-agent-authority-boundary.md) | 自动化迭代代理只有起草权——权限边界入 §2 决策权表（F-071 事故制度化） | Accepted | 2026-09-08 |
+| [ADR-003](ADR-003-trace-envelope-schema-version.md) | trace 信封 schema 版本字段 `v`（词表演进的前向兼容） | Accepted | 2026-09-08 |
 
 新决策：复制任一文件的五节骨架，`ADR-` 编号递增，同步更新本表。引用 ADR 必须带文件链接，不用裸编号。

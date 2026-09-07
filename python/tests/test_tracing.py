@@ -90,7 +90,7 @@ def test_envelope_carries_schema_version(tmp_path):
     w = MemoryTraceWriter(path)
     w.write("write", {})
     row = _read_lines(path)[0]
-    assert row["v"] == tracing.SCHEMA_VERSION == 1  # F-075
+    assert row["v"] == tracing.SCHEMA_VERSION == 1  # ADR-003
 
 
 def test_writer_creates_parent_dirs(tmp_path):

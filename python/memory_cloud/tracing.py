@@ -39,7 +39,7 @@ from typing import Any, Dict, Optional
 
 CHANNEL = "memory_trace"
 
-# F-075: envelope schema version. Bump on any vocabulary/field-semantics
+# ADR-003: envelope schema version. Bump on any vocabulary/field-semantics
 # change (which requires an ADR per F-069). Analyzers treat a missing `v`
 # as 1 (pre-F-075 files).
 SCHEMA_VERSION = 1

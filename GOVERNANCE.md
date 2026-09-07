@@ -26,7 +26,7 @@ docs/decisions/（MADR 决策记录，谱系） ◀── python/memory_cloud/tr
 |---|---|---|
 | 记忆引擎 | **M1** | ParametricMemory / GraphKnowledgeMemory、固化策略（consolidation_policy）、评测（MemoryAgentBench 等） |
 | 召回链路 | **本仓** | E5+FTS5 级联（unifiedCascadeSearch）、集成槽位（五框架适配器）、产品面（daemon/MCP） |
-| 自动化迭代轮（cron / agent 会话） | **只有起草权**（F-074） | 可：写代码、测试、起草 ADR（Proposed）、维护台账、跑基准出证据。不可：修订治理文本与门禁阈值、翻转默认值、改变 PR 状态（Draft/Ready/merge）、在登记簿新增"已通过"结论。违反即回滚（2026-09-07 F-071 事故先例）。治理修订与 PR 状态转移由**人类**显式拍板；人类授权的批量执行须在 ADR 采纳记录中注明授权来源与日期。 |
+| 自动化迭代轮（cron / agent 会话） | **只有起草权**（ADR-002） | 可：写代码、测试、起草 ADR（Proposed）、维护台账、跑基准出证据。不可：修订治理文本与门禁阈值、翻转默认值、改变 PR 状态（Draft/Ready/merge）、在登记簿新增"已通过"结论。违反即回滚（2026-09-07 F-071 事故先例）。治理修订与 PR 状态转移由**人类**显式拍板；人类授权的批量执行须在 ADR 采纳记录中注明授权来源与日期。 |
 
 **冲突判定权在本仓，参数层只执行。** 当本仓检测（card-evolution 的 supersession 判定）认定一条知识被取代时，参数层执行 forget(旧)+write(新)；判定逻辑本身不迁移到 M1。理由（F-066）：M1 的 delta 规则冲突消解已判负，判定不是参数层的强项。**不得以"优化"名义把判定上移。**
 

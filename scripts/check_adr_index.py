@@ -20,8 +20,8 @@ import re
 import sys
 from pathlib import Path
 
-ADR_FILE_RE = re.compile(r"^F-\d{3}-[a-z0-9\-]+\.md$")
-INDEX_ROW_RE = re.compile(r"^\|\s*\[?(F-\d{3})\]?\(([^)]+)\)\s*\|")
+ADR_FILE_RE = re.compile(r"^(?:F|ADR)-\d{3}-[a-z0-9\-]+\.md$")
+INDEX_ROW_RE = re.compile(r"^\|\s*\[?((?:F|ADR)-\d{3})\]?\(([^)]+)\)\s*\|")
 STATUS_LINE_RE = re.compile(r"-\s*\*\*状态\*\*:\s*(.+)")
 
 
@@ -67,8 +67,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     index = parse_index(index_path)
-    files = sorted(p.name for p in dir_path.glob("F-*.md") if ADR_FILE_RE.match(p.name))
-    file_ids = {f.split("-")[0] + "-" + f.split("-")[1] for f in files}
+    files = sorted(p.name for p in dir_path.glob("*.md") if ADR_FILE_RE.match(p.name))
 
     failures: list[str] = []
     for fid, entry in sorted(index.items()):
