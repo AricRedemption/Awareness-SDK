@@ -41,7 +41,7 @@ CHANNEL = "memory_trace"
 
 # ADR-003: envelope schema version. Bump on any vocabulary/field-semantics
 # change (which requires an ADR per F-069). Analyzers treat a missing `v`
-# as 1 (pre-F-075 files).
+# as 1 (files written before ADR-003).
 SCHEMA_VERSION = 1
 
 ENV_TRACE_PATH = "AWARENESS_TRACE_PATH"
@@ -99,6 +99,8 @@ class MemoryTraceWriter:
     of the same type are counted and the next emitted event carries the
     accumulated ``_suppressed_count`` — magnitude survives, duplicate density
     does not.  Errors and rare events (NEVER_SAMPLED) always pass.
+    ``close()`` flushes any pending suppressed count as a final row, so an
+    end-of-run window is never silently dropped.
     """
 
     def __init__(self, path: str, session_id: str = "default",
@@ -130,24 +132,34 @@ class MemoryTraceWriter:
             with self._lock:
                 if self._should_suppress_locked(event):
                     return
-                row: Dict[str, Any] = {
-                    "ts": datetime.now(timezone.utc).isoformat(),
-                    "event": event,
-                    **self._static,
-                }
-                if fields:
-                    row.update(fields)
+                row = self._make_row(event, fields)
                 suppressed = self._suppressed.pop(event, 0)
                 if suppressed:
                     row["_suppressed_count"] = suppressed
-                if self.max_bytes is not None and self._fh.tell() >= self.max_bytes:
-                    self._rotate_locked()
-                    if self._fh is None:
-                        return
-                self._fh.write(json.dumps(row, ensure_ascii=False, default=str) + "\n")
-                self._fh.flush()
+                self._emit_row_locked(row)
         except Exception:
             self._disable()
+
+    def _make_row(self, event: str, fields: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        row: Dict[str, Any] = {
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "event": event,
+            **self._static,
+        }
+        if fields:
+            row.update(fields)
+        return row
+
+    def _emit_row_locked(self, row: Dict[str, Any]) -> None:
+        """Caller holds the lock.  Rotation + append + flush.  Raises on I/O
+        failure; write()/close() convert that into self-disable — never throws
+        to the caller."""
+        if self.max_bytes is not None and self._fh.tell() >= self.max_bytes:
+            self._rotate_locked()
+            if self._fh is None:
+                return
+        self._fh.write(json.dumps(row, ensure_ascii=False, default=str) + "\n")
+        self._fh.flush()
 
     def _should_suppress_locked(self, event: str) -> bool:
         """F-072 min-interval decision. Caller holds the lock. Off → False."""
@@ -184,6 +196,26 @@ class MemoryTraceWriter:
         return self._disabled
 
     def close(self) -> None:
+        """Flush pending suppressed counts (F-072), then disable.
+
+        A run-end window must not lose magnitude information: each event type
+        with a pending suppressed count emits one final row carrying it.  The
+        flush bypasses the min-interval gate by design (a flush row emitted
+        inside its own throttle window would otherwise suppress itself).
+        Idempotent; never raises.
+        """
+        with self._lock:
+            pending = list(self._suppressed.items())
+            self._suppressed.clear()
+            for event, count in pending:
+                if not count or self._fh is None:
+                    continue
+                try:
+                    row = self._make_row(event, {"_suppressed_count": count})
+                    self._emit_row_locked(row)
+                except Exception:
+                    self._disable()
+                    break
         self._disable()
 
     def __enter__(self) -> "MemoryTraceWriter":

@@ -21,9 +21,12 @@
   auto 模式正常回退路径，不属于传输错误，不埋点。
 - `analyze_trace.py`：`transport_error` 聚合（total/by_op/by_route/
   by_error_class/by_status）。
-- 测试：test_tracing 8 例新增、test_analyze_trace 1 例、
+- 测试：test_tracing 12 例新增、test_analyze_trace 1 例、
   test_client_transport_trace 6 例（云 connect/timeout/http_status 单次
-  emit、daemon 双类、成功路径零事件）。全量 228 passed。
+  emit、daemon 双类、成功路径零事件）。
+- **close() 冲刷**（2026-09-08 验收补充）：run 结束窗口内的 pending
+  `_suppressed_count` 由 close() 以终行冲刷（绕过频控门——冲刷行若落在
+  自己的窗口内会被门拦掉）；幂等、never-raise。停机不再丢量级信息。
 
 ## 背景
 

@@ -432,3 +432,53 @@ def test_env_min_interval_resolves(monkeypatch, tmp_path):
     monkeypatch.delenv("AWARENESS_TRACE_MIN_INTERVAL_MS")
     w = resolve_trace_writer(str(tmp_path / "t3.jsonl"), min_interval_ms=1000)
     assert w._min_interval == 1.0
+
+
+# ------------------------------------------------------------------
+# F-072: close() flushes pending suppressed counts
+# ------------------------------------------------------------------
+
+
+def test_close_flushes_pending_suppressed_count(tmp_path):
+    path = str(tmp_path / "trace.jsonl")
+    w = MemoryTraceWriter(path, min_interval_ms=60000)
+    w.write("recall")            # emitted
+    w.write("recall")            # suppressed (1)
+    w.write("recall")            # suppressed (2)
+    w.close()
+    rows = _read_lines(path)
+    assert len(rows) == 2
+    assert rows[1]["_suppressed_count"] == 2
+
+
+def test_close_flush_bypasses_throttle_window(tmp_path):
+    # Regression: a flush row emitted INSIDE the throttle window must not
+    # suppress itself (close() bypasses the min-interval gate).
+    path = str(tmp_path / "trace.jsonl")
+    w = MemoryTraceWriter(path, min_interval_ms=60000)
+    w.write("recall")            # emitted, starts window
+    w.write("recall")            # suppressed (1)
+    w.close()                    # still inside the 60s window
+    rows = _read_lines(path)
+    assert len(rows) == 2
+    assert rows[1]["_suppressed_count"] == 1
+
+
+def test_close_flush_idempotent(tmp_path):
+    path = str(tmp_path / "trace.jsonl")
+    w = MemoryTraceWriter(path, min_interval_ms=60000)
+    w.write("write")
+    w.write("write")             # suppressed (1)
+    w.close()
+    w.close()                    # second close must not append again
+    rows = _read_lines(path)
+    assert len(rows) == 2
+    assert rows[1]["_suppressed_count"] == 1
+
+
+def test_close_without_pending_writes_nothing(tmp_path):
+    path = str(tmp_path / "trace.jsonl")
+    w = MemoryTraceWriter(path)
+    w.write("recall")
+    w.close()
+    assert len(_read_lines(path)) == 1  # no flush rows when nothing pending
