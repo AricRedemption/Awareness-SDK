@@ -1,9 +1,16 @@
 # 决策记录（Architecture Decision Records）
 
 格式：MADR-lite（状态 / 日期 / 背景 / 决策 / 后果），一决策一文件。
-编号续接本仓 F-xxx 体系（F-061 起 = 参数化集成线）。
 
-状态取值：`Proposed` / `Accepted` / `Superseded by F-xxx` / `Deprecated`。
+**命名空间（ADR-001 起分离）**：
+
+- **F-061 ~ F-075：冻结遗留块**——编号与上游 feature/fix 标记（F-053~F-088…）
+  同源冲突（F-064/F-072 已实际双义），自此冻结不再新增。引用时必须带文件链接。
+- **ADR-001 起：新决策命名空间**——`ADR-<NNN>-<slug>.md`，与上游编号彻底分离。
+
+状态取值：`Proposed` / `Accepted` / `Superseded by ADR-xxx` / `Deprecated`。
+
+## 遗留块（F-061 ~ F-075，冻结）
 
 | 编号 | 标题 | 状态 | 日期 |
 |---|---|---|---|
@@ -17,10 +24,16 @@
 | [F-068](F-068-bit-exact-parametric-only.md) | bit-exact 保证只覆盖参数化层 | Accepted | 2026-09-06 |
 | [F-069](F-069-sdk-trace-design.md) | SDK 级 trace：M1 信封 + OTel 字段映射 + opt-in hash-only；设立本治理体系 | Accepted | 2026-09-06 |
 | [F-070](F-070-governance-execution-infrastructure.md) | 治理与 trace 的工程化执行设施：CI / trace 分析器 / A-B 一键化 / 主张校验 | Accepted | 2026-09-06 |
-| [F-071](F-071-gate-text-vs-substance.md) | §3 字面门禁 vs §5 实质非回归：同环境基线 + A/B 零回归证据双条件（**提案**，待上游裁决） | Proposed | 2026-09-06 |
+| [F-071](F-071-gate-text-vs-substance.md) | §3 字面门禁 vs §5 实质非回归：同环境基线 + A/B 零回归证据双条件（随 PR #1 合并生效） | Accepted | 2026-09-06 |
 | [F-072](F-072-trace-phase2-sampling-and-transport-error.md) | trace 二期：采样/频控（min-interval，错误事件永不采样）+ `transport_error` 词表扩展 7→8 | Proposed | 2026-09-07 |
 | [F-073](F-073-claims-evidence-mapping.md) | 主张-证据显式映射文件（CLAIMS.md 模式）：声明式 lint + 撤回生命周期 | Proposed | 2026-09-07 |
 | [F-074](F-074-first-hop-env-surface.md) | 首跳开关的过程级 env 表面（AWARENESS_PARAMETRIC_FIRST_HOP，默认关） | Accepted | 2026-09-07 |
 | [F-075](F-075-session-metadata-store.md) | 会话元数据存储——补全 P2-1 快照路径承诺；trace 携带真实会话 id | Accepted | 2026-09-07 |
 
-新决策：复制任一文件的五节骨架，编号递增，同步更新本表。
+## 新命名空间（ADR- 起）
+
+| 编号 | 标题 | 状态 | 日期 |
+|---|---|---|---|
+| [ADR-001](ADR-001-decision-namespace-split.md) | 决策记录命名空间分离：冻结 F-编号，启用 ADR- 前缀 | Accepted | 2026-09-07 |
+
+新决策：复制任一文件的五节骨架，`ADR-` 编号递增，同步更新本表。引用 ADR 必须带文件链接，不用裸编号。
