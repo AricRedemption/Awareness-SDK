@@ -39,6 +39,11 @@ from typing import Any, Dict, Optional
 
 CHANNEL = "memory_trace"
 
+# F-075: envelope schema version. Bump on any vocabulary/field-semantics
+# change (which requires an ADR per F-069). Analyzers treat a missing `v`
+# as 1 (pre-F-075 files).
+SCHEMA_VERSION = 1
+
 ENV_TRACE_PATH = "AWARENESS_TRACE_PATH"
 ENV_TRACE_MAX_BYTES = "AWARENESS_TRACE_MAX_BYTES"
 ENV_TRACE_MIN_INTERVAL = "AWARENESS_TRACE_MIN_INTERVAL_MS"
@@ -103,7 +108,7 @@ class MemoryTraceWriter:
         self.session_id = session_id
         self.max_bytes = max_bytes
         self._min_interval = max(0.0, (min_interval_ms or 0) / 1000.0)
-        self._static = {"channel": CHANNEL, "session_id": session_id}
+        self._static = {"channel": CHANNEL, "session_id": session_id, "v": SCHEMA_VERSION}
         self._lock = threading.Lock()
         self._disabled = False
         self._fh = None

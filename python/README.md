@@ -358,8 +358,9 @@ python -m examples.parametric_quickstart
 
 or per client: `MemoryCloudClient(base_url=..., trace_path=...)`.
 
-- **Envelope**: `{ts, event, session_id, channel, ...fields}` — same shape as
-  M1's `JsonlMetricWriter`, joinable by `session_id`.
+- **Envelope**: `{ts, event, session_id, channel, v, ...fields}` — same shape
+  as M1's `JsonlMetricWriter`, joinable by `session_id`; `v` is the envelope
+  schema version (F-075, currently 1; bump requires an ADR).
 - **Hash-only by default**: content is recorded as `content_hash` (sha256,
   first 16 hex) + `content_bytes`; `trace_full_content=True` (or the
   constructor param) opts in to raw text.

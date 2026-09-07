@@ -85,6 +85,14 @@ def test_envelope_fields_present(tmp_path):
     assert row["content_hash"] == "abc"
 
 
+def test_envelope_carries_schema_version(tmp_path):
+    path = str(tmp_path / "trace.jsonl")
+    w = MemoryTraceWriter(path)
+    w.write("write", {})
+    row = _read_lines(path)[0]
+    assert row["v"] == tracing.SCHEMA_VERSION == 1  # F-075
+
+
 def test_writer_creates_parent_dirs(tmp_path):
     path = str(tmp_path / "deep" / "nested" / "trace.jsonl")
     w = MemoryTraceWriter(path)
