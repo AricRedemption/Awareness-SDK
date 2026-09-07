@@ -66,6 +66,10 @@ jobs:
         run: |
           set -o pipefail
           python3 scripts/check_adr_index.py | tee /tmp/adr-out.txt
+      - name: Check version sync (版本漂移守门：包元数据 ↔ CHANGELOG 最新发布)
+        run: |
+          set -o pipefail
+          python3 scripts/check_version_sync.py | tee /tmp/ver-out.txt
       - name: Job summary
         if: always()
         run: |
@@ -77,6 +81,10 @@ jobs:
             echo "## ADR 索引一致性"
             echo '```'
             tail -n 6 /tmp/adr-out.txt 2>/dev/null || echo "(无输出)"
+            echo '```'
+            echo "## 版本一致性"
+            echo '```'
+            tail -n 6 /tmp/ver-out.txt 2>/dev/null || echo "(无输出)"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
