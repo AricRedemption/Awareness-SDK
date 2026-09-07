@@ -46,6 +46,11 @@ def analyze(lines: Iterable[str]) -> Dict[str, Any]:
     latencies: List[float] = []
     degrade_by_op: Dict[str, int] = {}
     degrade_by_reason: Dict[str, int] = {}
+    transport_total = 0
+    transport_by_op: Dict[str, int] = {}
+    transport_by_route: Dict[str, int] = {}
+    transport_by_class: Dict[str, int] = {}
+    transport_by_status: Dict[str, int] = {}
     counted: Dict[str, int] = {e: 0 for e in EVENTS_WITH_COUNTS}
     write_bytes_total = 0
     other_events: Dict[str, int] = {}
@@ -82,6 +87,18 @@ def analyze(lines: Iterable[str]) -> Dict[str, Any]:
             reason = str(row.get("reason", "unknown"))
             degrade_by_op[op] = degrade_by_op.get(op, 0) + 1
             degrade_by_reason[reason] = degrade_by_reason.get(reason, 0) + 1
+        elif event == "transport_error":
+            transport_total += 1
+            op = str(row.get("op", "unknown"))
+            route = str(row.get("route", "unknown"))
+            err_class = str(row.get("error_class", "unknown"))
+            status = row.get("status")
+            transport_by_op[op] = transport_by_op.get(op, 0) + 1
+            transport_by_route[route] = transport_by_route.get(route, 0) + 1
+            transport_by_class[err_class] = transport_by_class.get(err_class, 0) + 1
+            if status is not None:
+                key = str(status)
+                transport_by_status[key] = transport_by_status.get(key, 0) + 1
         elif event == "write":
             counted["write"] += 1
             nbytes = row.get("content_bytes")
@@ -122,6 +139,14 @@ def analyze(lines: Iterable[str]) -> Dict[str, Any]:
             "total": sum(degrade_by_op.values()),
             "by_op": dict(sorted(degrade_by_op.items())),
             "by_reason": dict(sorted(degrade_by_reason.items())),
+        },
+        "transport_error": {
+            "total": transport_total,
+            "by_op": dict(sorted(transport_by_op.items())),
+            "by_route": dict(sorted(transport_by_route.items())),
+            "by_error_class": dict(sorted(transport_by_class.items())),
+            "by_status": dict(sorted(transport_by_status.items(),
+                                     key=lambda kv: kv[0])),
         },
         "events": {
             **{name: cnt for name, cnt in counted.items()},
@@ -166,6 +191,19 @@ def render(summary: Dict[str, Any], verbose: bool = False) -> str:
     if verbose:
         for reason, cnt in deg["by_reason"].items():
             out.append(f"  reason={reason:<30} {cnt}")
+    te = summary["transport_error"]
+    out.append("")
+    out.append("— transport_error (HTTP failure evidence, F-072) —")
+    out.append(f"  total: {te['total']}")
+    for route, cnt in te["by_route"].items():
+        out.append(f"  route={route:<12} {cnt}")
+    for err_class, cnt in te["by_error_class"].items():
+        out.append(f"  class={err_class:<12} {cnt}")
+    if verbose:
+        for op, cnt in te["by_op"].items():
+            out.append(f"  op={op:<20} {cnt}")
+        for status, cnt in te["by_status"].items():
+            out.append(f"  http_status={status:<10} {cnt}")
     out.append("")
     out.append("— other events —")
     ev = summary["events"]

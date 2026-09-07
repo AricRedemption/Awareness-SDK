@@ -33,6 +33,7 @@ import hashlib
 import json
 import os
 import threading
+import time
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
@@ -40,6 +41,13 @@ CHANNEL = "memory_trace"
 
 ENV_TRACE_PATH = "AWARENESS_TRACE_PATH"
 ENV_TRACE_MAX_BYTES = "AWARENESS_TRACE_MAX_BYTES"
+ENV_TRACE_MIN_INTERVAL = "AWARENESS_TRACE_MIN_INTERVAL_MS"
+
+# F-072 sampling classes.  min-interval throttling (default OFF) applies ONLY
+# to high-frequency success events; errors and rare events are never sampled
+# (industry practice: error paths outrank success paths for evidence value).
+MIN_INTERVAL_ELIGIBLE = frozenset({"recall", "write"})
+NEVER_SAMPLED = frozenset({"broker_unavailable", "transport_error", "forget", "conflict_forget"})
 
 
 def _hash16(text: str) -> str:
@@ -80,17 +88,27 @@ class MemoryTraceWriter:
     reaches the limit: the current file is moved to ``<path>.1`` (replacing
     any previous rotation) and writing continues on a fresh file.  A failed
     rotation counts as an I/O failure — the writer disables itself.
+
+    ``min_interval_ms`` (optional, default off, F-072) throttles the eligible
+    success events (``recall``/``write``): within the window, further events
+    of the same type are counted and the next emitted event carries the
+    accumulated ``_suppressed_count`` — magnitude survives, duplicate density
+    does not.  Errors and rare events (NEVER_SAMPLED) always pass.
     """
 
     def __init__(self, path: str, session_id: str = "default",
-                 max_bytes: Optional[int] = None):
+                 max_bytes: Optional[int] = None,
+                 min_interval_ms: Optional[int] = None):
         self.path = path
         self.session_id = session_id
         self.max_bytes = max_bytes
+        self._min_interval = max(0.0, (min_interval_ms or 0) / 1000.0)
         self._static = {"channel": CHANNEL, "session_id": session_id}
         self._lock = threading.Lock()
         self._disabled = False
         self._fh = None
+        self._last_emit: Dict[str, float] = {}
+        self._suppressed: Dict[str, int] = {}
         try:
             parent = os.path.dirname(os.path.abspath(path))
             if parent:
@@ -103,15 +121,20 @@ class MemoryTraceWriter:
     def write(self, event: str, fields: Optional[Dict[str, Any]] = None) -> None:
         if self._disabled or self._fh is None:
             return
-        row: Dict[str, Any] = {
-            "ts": datetime.now(timezone.utc).isoformat(),
-            "event": event,
-            **self._static,
-        }
-        if fields:
-            row.update(fields)
         try:
             with self._lock:
+                if self._should_suppress_locked(event):
+                    return
+                row: Dict[str, Any] = {
+                    "ts": datetime.now(timezone.utc).isoformat(),
+                    "event": event,
+                    **self._static,
+                }
+                if fields:
+                    row.update(fields)
+                suppressed = self._suppressed.pop(event, 0)
+                if suppressed:
+                    row["_suppressed_count"] = suppressed
                 if self.max_bytes is not None and self._fh.tell() >= self.max_bytes:
                     self._rotate_locked()
                     if self._fh is None:
@@ -120,6 +143,18 @@ class MemoryTraceWriter:
                 self._fh.flush()
         except Exception:
             self._disable()
+
+    def _should_suppress_locked(self, event: str) -> bool:
+        """F-072 min-interval decision. Caller holds the lock. Off → False."""
+        if self._min_interval <= 0.0 or event not in MIN_INTERVAL_ELIGIBLE:
+            return False
+        now = time.monotonic()
+        last = self._last_emit.get(event)
+        if last is not None and (now - last) < self._min_interval:
+            self._suppressed[event] = self._suppressed.get(event, 0) + 1
+            return True
+        self._last_emit[event] = now
+        return False
 
     def _rotate_locked(self) -> None:
         """Rotate to <path>.1. Caller holds the lock; raises on I/O failure
@@ -157,12 +192,15 @@ def resolve_trace_writer(
     trace_path: Optional[str] = None,
     session_id: str = "default",
     max_bytes: Optional[int] = None,
+    min_interval_ms: Optional[int] = None,
 ) -> Any:
     """Return a MemoryTraceWriter when tracing is on, else the Null no-op.
 
     Precedence: explicit ``trace_path`` > ``AWARENESS_TRACE_PATH`` env > off.
     Rotation limit: explicit ``max_bytes`` > ``AWARENESS_TRACE_MAX_BYTES``
-    env (integer) > no rotation.  Invalid env values are ignored (off).
+    env (integer) > no rotation.  Min-interval (F-072): explicit
+    ``min_interval_ms`` > ``AWARENESS_TRACE_MIN_INTERVAL_MS`` env (integer)
+    > off.  Invalid env values are ignored (off).
     """
     path = trace_path or os.environ.get(ENV_TRACE_PATH) or ""
     if not path.strip():
@@ -173,7 +211,16 @@ def resolve_trace_writer(
             max_bytes = int(raw) if raw.strip() else None
         except ValueError:
             max_bytes = None
-    return MemoryTraceWriter(path.strip(), session_id=session_id, max_bytes=max_bytes)
+    if min_interval_ms is None:
+        raw = os.environ.get(ENV_TRACE_MIN_INTERVAL, "")
+        try:
+            min_interval_ms = int(raw) if raw.strip() else None
+        except ValueError:
+            min_interval_ms = None
+    return MemoryTraceWriter(
+        path.strip(), session_id=session_id,
+        max_bytes=max_bytes, min_interval_ms=min_interval_ms,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -300,3 +347,37 @@ def log_degrade(writer: Any, *, op: str, reason: str,
     if session_id:
         fields["session_id"] = session_id  # override client-prefix static
     writer.write("broker_unavailable", fields)
+
+
+def log_transport_error(
+    writer: Any,
+    *,
+    op: str,
+    route: str,
+    error_class: str,
+    status: Optional[int] = None,
+    latency_ms: Optional[float] = None,
+    trace_id: Optional[str] = None,
+    session_id: Optional[str] = None,
+) -> None:
+    """HTTP transport failure on the daemon/cloud path (F-072, event 8/8).
+
+    error_class: connect | timeout | http_status | other.  ``status`` is the
+    HTTP status code for http_status.  Content-free by design (hash-only
+    discipline); error events are never sampled (NEVER_SAMPLED).
+    """
+    fields: Dict[str, Any] = {
+        "gen_ai.operation.name": "memory.transport_error",
+        "op": op,
+        "route": route,
+        "error_class": error_class,
+    }
+    if status is not None:
+        fields["status"] = status
+    if latency_ms is not None:
+        fields["latency_ms"] = round(latency_ms, 3)
+    if trace_id:
+        fields["trace_id"] = trace_id
+    if session_id:
+        fields["session_id"] = session_id  # override client-prefix static
+    writer.write("transport_error", fields)

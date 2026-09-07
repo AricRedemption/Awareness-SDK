@@ -1,10 +1,29 @@
 # F-072 · trace 二期：采样/频控与传输层错误事件
 
-- **状态**: Proposed（待上游裁决）
-- **日期**: 2026-09-07
+- **状态**: Accepted（2026-09-08 采纳并实施）
+- **日期**: 2026-09-07（提案）；2026-09-08 采纳
 - **提案**: 扩展事件词表（7→8）；为 writer 增加采样/频控配置
-- **执行状态**: 纯设计草案，未动任何代码。事件词表变更依 F-069 须走 ADR——
-  本文件即该 ADR；采纳前词表保持七事件。
+- **采纳记录**: 用户 2026-09-08 会话授权全量执行，本法随 F-071/F-073 一并采纳。
+  词表变更依 F-069 走 ADR——本文件即该 ADR。业界对标（OTel head/tail 采样、
+  Langfuse 错误优先埋点）见 LEDGER S4 搜索发现：本设计与其混合式最佳实践同构。
+
+## 实施记录（2026-09-08）
+
+- `tracing.py`：`log_transport_error()`（op/route/error_class/status/latency_ms/
+  trace_id，内容零记录）+ `MIN_INTERVAL_ELIGIBLE`（recall/write）/`NEVER_SAMPLED`
+  （broker_unavailable/transport_error/forget/conflict_forget）+ writer
+  `min_interval_ms`（参数 > `AWARENESS_TRACE_MIN_INTERVAL_MS` env > 关）+
+  `_suppressed_count` 聚合携带。
+- `client.py`：云路由在 `_request_response` 收口埋点（op 由
+  `_op_from_request` 从 method+path 无内容分类，内存 ID 不落盘）；daemon
+  路由在 `call_local_daemon` 收口埋点（op 用 `DAEMON_OP_NAMES` 映射）。
+  **仅最终失败 emit**——可重试中间态不是事件；`_probe_daemon` 探活失败是
+  auto 模式正常回退路径，不属于传输错误，不埋点。
+- `analyze_trace.py`：`transport_error` 聚合（total/by_op/by_route/
+  by_error_class/by_status）。
+- 测试：test_tracing 8 例新增、test_analyze_trace 1 例、
+  test_client_transport_trace 6 例（云 connect/timeout/http_status 单次
+  emit、daemon 双类、成功路径零事件）。全量 228 passed。
 
 ## 背景
 
@@ -17,7 +36,7 @@ F-070 工程化审计（2026-09-07）确认 trace 机制的两个二期缺口：
    HTTP 失败路径（daemon 不可达、超时、非 2xx）目前不 emit 任何事件——
    行业惯例是错误路径优先于成功路径埋点（错误稀有且高价值）。
 
-## 建议决议（全部待上游采纳，未实施）
+## 决议（已实施）
 
 ### 1. 词表扩展：新增 `transport_error`（7→8 事件）
 
@@ -45,14 +64,13 @@ F-070 工程化审计（2026-09-07）确认 trace 机制的两个二期缺口：
 后续任何埋点扩展，错误/降级路径的覆盖优先级高于成功路径（§6 最低证据集
 的延伸：治理消费的证据集中在异常与延迟，正常路径密度反而损害信噪比）。
 
-## 后果（若上游采纳）
+## 后果
 
 - 词表 7→8：`transport_error` 进入 F-069 词表；`analyze_trace.py` 同步
   识别（unknown-bucket 机制保证旧分析器不崩，见 F-070 设计）。
 - writer 增加 `min_interval_ms` 配置面（默认关——默认行为不变，符合
   "新能力默认关"门禁第 2 条精神）。
 - 事件流体积在 daemon 长跑场景可控；rotation 继续兜底单文件大小。
-- **若上游不采纳**：维持七事件 + 无采样现状；本 ADR 归档为 Discontinued。
 
 ## 与既有决策的关系
 

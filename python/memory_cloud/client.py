@@ -12,7 +12,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Union
 import requests
 
 from memory_cloud.errors import MemoryCloudError
-from memory_cloud.tracing import resolve_trace_writer, log_recall, log_write
+from memory_cloud.tracing import resolve_trace_writer, log_recall, log_write, log_transport_error
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +29,14 @@ DEFAULT_LOCAL_DAEMON_URL = "http://localhost:37800"
 DAEMON_SUPPORTED_TOOLS = frozenset(
     {"awareness_init", "awareness_recall", "awareness_record", "awareness_lookup"}
 )
+
+# F-072: content-free op labels for transport_error events on the daemon route.
+DAEMON_OP_NAMES = {
+    "awareness_init": "init",
+    "awareness_recall": "recall",
+    "awareness_record": "record",
+    "awareness_lookup": "lookup",
+}
 
 
 def _parse_recall_markdown(text: str) -> List[Dict[str, Any]]:
@@ -167,6 +175,63 @@ class MemoryCloudClient:
         except Exception:
             pass
 
+    def _trace_transport_error(
+        self,
+        *,
+        op: str,
+        route: str,
+        error_class: str,
+        status: Optional[int] = None,
+        t0: Optional[float] = None,
+        trace_id: Optional[str] = None,
+    ) -> None:
+        """F-072: transport failures are evidence — emit, never throw."""
+        try:
+            latency = (time.perf_counter() - t0) * 1000.0 if t0 is not None else None
+            log_transport_error(
+                self._trace_writer,
+                op=op,
+                route=route,
+                error_class=error_class,
+                status=status,
+                latency_ms=latency,
+                trace_id=trace_id,
+            )
+        except Exception:
+            pass
+
+    @staticmethod
+    def _classify_transport_exc(exc: Exception) -> str:
+        """Map a requests exception to the F-072 error_class vocabulary."""
+        if isinstance(exc, requests.exceptions.Timeout):
+            return "timeout"
+        if isinstance(exc, requests.exceptions.ConnectionError):
+            return "connect"
+        return "other"
+
+    @staticmethod
+    def _op_from_request(method: str, path: str) -> str:
+        """Content-free operation label for a REST call (memory ids stripped)."""
+        method_u = method.upper()
+        if path.endswith("/retrieve"):
+            return "retrieve"
+        if path.endswith("/chat"):
+            return "chat"
+        if path.endswith("/timeline"):
+            return "timeline"
+        if path.endswith("/content"):
+            return "write" if method_u == "POST" else "content"
+        if path.endswith("/sessions/migrate"):
+            return "session_migrate"
+        if path.endswith("/memories"):
+            return "create_memory" if method_u == "POST" else "list_memories"
+        if "/content/" in path:
+            return "delete_content" if method_u == "DELETE" else "content"
+        if re.search(r"/memories/[^/]+$", path):
+            return {"GET": "get_memory", "PATCH": "update_memory",
+                    "DELETE": "delete_memory"}.get(method_u, "memory")
+        return "http"
+
     # ----------------------------
     # Local daemon bridge (mode="local" / "auto")
     # ----------------------------
@@ -216,6 +281,7 @@ class MemoryCloudClient:
             "method": "tools/call",
             "params": {"name": tool_name, "arguments": args},
         }
+        t0 = time.perf_counter()
         try:
             response = self.session.post(
                 f"{self.local_daemon_url}/mcp",
@@ -224,8 +290,21 @@ class MemoryCloudClient:
                 headers={"Content-Type": "application/json"},
             )
         except requests.RequestException as exc:
+            self._trace_transport_error(
+                op=DAEMON_OP_NAMES.get(tool_name, tool_name),
+                route="daemon",
+                error_class=self._classify_transport_exc(exc),
+                t0=t0,
+            )
             raise MemoryCloudError("LOCAL_DAEMON_ERROR", f"Daemon RPC failed: {exc}") from exc
         if response.status_code >= 400:
+            self._trace_transport_error(
+                op=DAEMON_OP_NAMES.get(tool_name, tool_name),
+                route="daemon",
+                error_class="http_status",
+                status=response.status_code,
+                t0=t0,
+            )
             raise MemoryCloudError(
                 "LOCAL_DAEMON_ERROR",
                 f"Daemon HTTP {response.status_code}: {response.text[:200]}",
@@ -1900,6 +1979,8 @@ class MemoryCloudClient:
         headers = self._headers(trace_id=trace_id, idempotency_key=idempotency_key)
         if extra_headers:
             headers.update(extra_headers)
+        op = self._op_from_request(method, path)
+        t0 = time.perf_counter()
 
         for attempt in range(self.max_retries + 1):
             try:
@@ -1914,6 +1995,14 @@ class MemoryCloudClient:
                 )
             except requests.RequestException as exc:
                 if attempt >= self.max_retries:
+                    # F-072: final transport failure is evidence. Retryable
+                    # intermediate failures are intentionally not emitted —
+                    # the operation is only "failed" when the loop gives up.
+                    self._trace_transport_error(
+                        op=op, route="cloud",
+                        error_class=self._classify_transport_exc(exc),
+                        t0=t0, trace_id=trace_id,
+                    )
                     raise MemoryCloudError("NETWORK_ERROR", str(exc)) from exc
                 self._sleep(attempt)
                 continue
@@ -1923,6 +2012,10 @@ class MemoryCloudClient:
                 if response.status_code in RETRYABLE_STATUSES and attempt < self.max_retries:
                     self._sleep(attempt)
                     continue
+                self._trace_transport_error(
+                    op=op, route="cloud", error_class="http_status",
+                    status=response.status_code, t0=t0, trace_id=resolved_trace_id,
+                )
                 raise self._build_error(response, resolved_trace_id)
 
             return response, resolved_trace_id

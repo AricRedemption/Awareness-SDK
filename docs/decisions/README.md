@@ -25,7 +25,7 @@
 | [F-069](F-069-sdk-trace-design.md) | SDK 级 trace：M1 信封 + OTel 字段映射 + opt-in hash-only；设立本治理体系 | Accepted | 2026-09-06 |
 | [F-070](F-070-governance-execution-infrastructure.md) | 治理与 trace 的工程化执行设施：CI / trace 分析器 / A-B 一键化 / 主张校验 | Accepted | 2026-09-06 |
 | [F-071](F-071-gate-text-vs-substance.md) | §3 字面门禁 vs §5 实质非回归：同环境基线 + A/B 零回归证据双条件（随 PR #1 合并生效） | Accepted | 2026-09-06 |
-| [F-072](F-072-trace-phase2-sampling-and-transport-error.md) | trace 二期：采样/频控（min-interval，错误事件永不采样）+ `transport_error` 词表扩展 7→8 | Proposed | 2026-09-07 |
+| [F-072](F-072-trace-phase2-sampling-and-transport-error.md) | trace 二期：采样/频控（min-interval，错误事件永不采样）+ `transport_error` 词表扩展 7→8 | Accepted | 2026-09-07 |
 | [F-073](F-073-claims-evidence-mapping.md) | 主张-证据显式映射文件（CLAIMS.md 模式）：声明式 lint + 撤回生命周期 | Proposed | 2026-09-07 |
 | [F-074](F-074-first-hop-env-surface.md) | 首跳开关的过程级 env 表面（AWARENESS_PARAMETRIC_FIRST_HOP，默认关） | Accepted | 2026-09-07 |
 | [F-075](F-075-session-metadata-store.md) | 会话元数据存储——补全 P2-1 快照路径承诺；trace 携带真实会话 id | Accepted | 2026-09-07 |

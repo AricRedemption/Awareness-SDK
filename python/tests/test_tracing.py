@@ -314,3 +314,113 @@ def test_log_helpers_without_session_id_keep_static(tmp_path):
     log_write(w, content="x")
     row = _read_lines(path)[0]
     assert row["session_id"] == "sdk"
+
+
+# F-072: transport_error (event 8/8)
+# ------------------------------------------------------------------
+
+
+def test_log_transport_error_fields(tmp_path):
+    path = str(tmp_path / "trace.jsonl")
+    w = MemoryTraceWriter(path)
+    tracing.log_transport_error(
+        w, op="retrieve", route="cloud", error_class="http_status",
+        status=503, latency_ms=12.5, trace_id="t-9",
+    )
+    row = _read_lines(path)[0]
+    assert row["event"] == "transport_error"
+    assert row["op"] == "retrieve"
+    assert row["route"] == "cloud"
+    assert row["error_class"] == "http_status"
+    assert row["status"] == 503
+    assert row["latency_ms"] == 12.5
+    assert row["trace_id"] == "t-9"
+    assert "gen_ai.operation.name" in row
+
+
+def test_log_transport_error_content_free(tmp_path):
+    path = str(tmp_path / "trace.jsonl")
+    w = MemoryTraceWriter(path)
+    tracing.log_transport_error(
+        w, op="recall", route="daemon", error_class="connect",
+    )
+    row = _read_lines(path)[0]
+    assert "status" not in row and "latency_ms" not in row
+    assert row["error_class"] == "connect"
+
+
+# ------------------------------------------------------------------
+# F-072: min-interval throttling (default off)
+# ------------------------------------------------------------------
+
+
+def test_min_interval_off_by_default(tmp_path):
+    path = str(tmp_path / "trace.jsonl")
+    w = MemoryTraceWriter(path)
+    for _ in range(5):
+        w.write("recall")
+    assert len(_read_lines(path)) == 5
+    assert w._min_interval == 0.0
+
+
+def test_min_interval_suppresses_and_carries_count(tmp_path):
+    path = str(tmp_path / "trace.jsonl")
+    w = MemoryTraceWriter(path, min_interval_ms=60000)
+    w.write("recall", {"n": 1})          # emitted, starts the window
+    w.write("recall", {"n": 2})          # suppressed
+    w.write("recall", {"n": 3})          # suppressed
+    w.write("write", {"content_hash": "x"})  # different type — own window
+    w.write("write", {"content_hash": "y"})  # suppressed
+    rows = _read_lines(path)
+    assert len(rows) == 2
+    assert rows[0]["event"] == "recall" and "_suppressed_count" not in rows[0]
+    assert rows[1]["event"] == "write"  # first of its type starts its own window
+    assert "_suppressed_count" not in rows[1]
+    assert w._suppressed == {"recall": 2, "write": 1}  # pending, carried on next emit
+
+
+def test_min_interval_next_emit_carries_accumulated(tmp_path):
+    path = str(tmp_path / "trace.jsonl")
+    w = MemoryTraceWriter(path, min_interval_ms=60000)
+    w.write("recall")            # emitted
+    w.write("recall")            # suppressed (1)
+    w.write("recall")            # suppressed (2)
+    w._last_emit["recall"] = 0.0  # window elapsed
+    w.write("recall")            # emitted again, carries both
+    rows = _read_lines(path)
+    assert len(rows) == 2
+    assert rows[1]["_suppressed_count"] == 2
+
+
+def test_min_interval_never_samples_errors(tmp_path):
+    path = str(tmp_path / "trace.jsonl")
+    w = MemoryTraceWriter(path, min_interval_ms=60000)
+    for _ in range(4):
+        tracing.log_transport_error(w, op="op", route="cloud", error_class="connect")
+        tracing.log_degrade(w, op="op", reason="r")
+        tracing.log_forget(w, key="k")
+        tracing.log_conflict_forget(w, old_key="o", new_key="n")
+    rows = _read_lines(path)
+    assert len(rows) == 16  # every error/rare event passes untouched
+    assert all("_suppressed_count" not in r for r in rows)
+
+
+def test_min_interval_snapshot_restore_unaffected(tmp_path):
+    path = str(tmp_path / "trace.jsonl")
+    w = MemoryTraceWriter(path, min_interval_ms=60000)
+    tracing.log_snapshot(w)
+    tracing.log_snapshot(w)
+    tracing.log_restore(w)
+    assert len(_read_lines(path)) == 3
+
+
+def test_env_min_interval_resolves(monkeypatch, tmp_path):
+    monkeypatch.setenv("AWARENESS_TRACE_MIN_INTERVAL_MS", "not-a-number")
+    w = resolve_trace_writer(str(tmp_path / "t.jsonl"))
+    assert w._min_interval == 0.0
+    monkeypatch.setenv("AWARENESS_TRACE_MIN_INTERVAL_MS", "250")
+    w = resolve_trace_writer(str(tmp_path / "t2.jsonl"))
+    assert w._min_interval == 0.25
+    monkeypatch.delenv("AWARENESS_TRACE_MIN_INTERVAL_MS")
+    w = resolve_trace_writer(str(tmp_path / "t3.jsonl"), min_interval_ms=1000)
+    assert w._min_interval == 1.0

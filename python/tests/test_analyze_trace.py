@@ -121,3 +121,21 @@ def test_cli_missing_file_exit_1(capsys):
     rc = analyze_trace.main(["/nonexistent/trace.jsonl"])
     assert rc == 1
     assert "cannot read" in capsys.readouterr().err
+
+
+def test_transport_error_aggregation():
+    lines = [
+        _row("transport_error", op="retrieve", route="cloud",
+             error_class="http_status", status=503, latency_ms=120.0),
+        _row("transport_error", op="retrieve", route="cloud",
+             error_class="timeout"),
+        _row("transport_error", op="recall", route="daemon",
+             error_class="connect", status=502),
+    ]
+    s = analyze_trace.analyze(lines)
+    te = s["transport_error"]
+    assert te["total"] == 3
+    assert te["by_op"] == {"recall": 1, "retrieve": 2}
+    assert te["by_route"] == {"cloud": 2, "daemon": 1}
+    assert te["by_error_class"] == {"connect": 1, "http_status": 1, "timeout": 1}
+    assert te["by_status"] == {"502": 1, "503": 1}

@@ -1,5 +1,20 @@
 # Changelog
 
+## [Unreleased] — F-072 trace phase 2 (adopted 2026-09-08)
+
+### Added
+- `transport_error` trace event (vocabulary 7→8, F-072): emitted on FINAL
+  transport failure of daemon/cloud HTTP paths (`op`/`route`/
+  `error_class` connect|timeout|http_status/`status`/`latency_ms`).
+  Content-free; never sampled.
+- Min-interval throttling for high-frequency success events (default OFF):
+  `min_interval_ms=` param or `AWARENESS_TRACE_MIN_INTERVAL_MS` env;
+  suppressed events aggregate into `_suppressed_count` on the next emitted
+  event of the same type. Errors/rare events never sampled.
+- `analyze_trace.py`: `transport_error` aggregation (by op/route/class/status).
+- 15 new tests (tracing 8, analyzer 1, client transport 6). Total: 228 passed.
+
+
 ## [2.7.0] - 2026-09-04
 
 ### Added — MemoryCloudParametric adapter (M1 broker integration)

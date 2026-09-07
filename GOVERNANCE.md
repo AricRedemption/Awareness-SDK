@@ -65,7 +65,7 @@ docs/decisions/（MADR 决策记录，谱系） ◀── python/memory_cloud/tr
 
 - **机制 trace**（`python/memory_cloud/tracing.py`）：产出本仓运行时证据。信封沿用 M1 `JsonlMetricWriter` 形状（`{ts, event, session_id, channel, ...fields}`），扩展字段命名参照 OTel GenAI semconv（`gen_ai.*`）。默认关、hash-only、never-throw。
 - **决策记录**（`docs/decisions/`）：MADR-lite 格式（状态/日期/背景/决策/后果），一决策一文件。命名空间自 ADR-001 起用 `ADR-<NNN>-<slug>.md`；F-061~F-075 为冻结遗留块（与上游 feature-flag 编号冲突，见 ADR-001）。索引见 `docs/decisions/README.md`。
-- 治理消费的最低证据集：`recall`（route/hit/latency）、`broker_unavailable`（降级频率）。这两个事件缺失时，§5 的方向治理无从执行。
+- 治理消费的最低证据集：`recall`（route/hit/latency）、`broker_unavailable`（降级频率）、`transport_error`（HTTP 失败路径，F-072）。前两个事件缺失时，§5 的方向治理无从执行；`transport_error` 缺失时错误路径盲区不闭合（错误路径优先于成功路径埋点，F-072）。
 
 ## 7. 主张登记簿（Claims Register）
 
