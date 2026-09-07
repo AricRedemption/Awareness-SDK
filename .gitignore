@@ -3,6 +3,9 @@ dist/
 .DS_Store
 .venv/
 __pycache__/
+.coverage
+.coverage.*
+htmlcov/
 
 # Test artifacts
 .hypothesis/

@@ -393,7 +393,9 @@ def test_min_interval_next_emit_carries_accumulated(tmp_path):
     w.write("recall")            # emitted
     w.write("recall")            # suppressed (1)
     w.write("recall")            # suppressed (2)
-    w._last_emit["recall"] = 0.0  # window elapsed
+    import time
+    # origin-independent: step back one window+ε (monotonic() starts near 0 on macOS)
+    w._last_emit["recall"] = time.monotonic() - 61.0
     w.write("recall")            # emitted again, carries both
     rows = _read_lines(path)
     assert len(rows) == 2

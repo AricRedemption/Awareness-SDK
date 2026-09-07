@@ -20,15 +20,25 @@ permissions:
 
 jobs:
   python-tests:
-    name: Python 全量测试（含 trace 套件）
+    name: Python 全量测试（py${{ matrix.python-version }}，含覆盖率）
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # pyproject 声称 requires-python >=3.9 —— 最低声称版本必须有实测腿
+        # （3.9 兼容 pin 组由 uv 在本地实跑验证：240 passed @ 3.9.6）。
+        include:
+          - python-version: "3.12"
+            pins: "pytest==9.1.1 requests==2.34.2 pydantic==2.13.5 numpy==2.5.3 pytest-cov==7.1.0"
+          - python-version: "3.9"
+            pins: "pytest==8.4.2 requests==2.32.5 pydantic==2.13.5 numpy==2.0.2 pytest-cov==7.1.0"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
       - name: Install test dependencies
-        run: pip install pytest==9.1.1 requests==2.34.2 pydantic==2.13.5 numpy==2.5.3
+        run: pip install ${{ matrix.pins }}
         # numpy: _dev_stubs/parametric_memory.py (contract-test stub) uses it
       - name: Import + trace smoke test
         working-directory: python
@@ -37,16 +47,17 @@ jobs:
         working-directory: python
         run: |
           set -o pipefail
-          python -m pytest tests/ --ignore=tests/test_sdk_functional.py -q | tee /tmp/pytest-out.txt
+          python -m pytest tests/ --ignore=tests/test_sdk_functional.py -q \
+            --cov=memory_cloud --cov-report=term-missing:skip-covered | tee /tmp/pytest-out.txt
         # test_sdk_functional.py 需要 live server（localhost:8000），为存量环境性排除，
         # 见 HANDOFF 与 PR #1 说明。
       - name: Job summary
         if: always()
         run: |
           {
-            echo "## Python tests（GOVERNANCE §3 门禁）"
+            echo "## Python tests py${{ matrix.python-version }}（GOVERNANCE §3 门禁）"
             echo '```'
-            tail -n 6 /tmp/pytest-out.txt 2>/dev/null || echo "(无输出)"
+            tail -n 14 /tmp/pytest-out.txt 2>/dev/null || echo "(无输出)"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -112,6 +123,57 @@ jobs:
             echo '```'
             echo "pass: $(grep -cE '^✔' /tmp/js-pr.txt 2>/dev/null || echo 0)"
             grep -E '^✖' /tmp/js-pr.txt 2>/dev/null | head -n 10 || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # 其余 SDK 包的门禁（2026-09-08 工程化盘点：四包有测试但 CI 零覆盖）。
+  # 本地预跑实测：typescript 64 / openclaw 203 (vitest) / setup-cli 84 /
+  # browser-extension 32+1 —— browser-extension 的 chaos-daemon 套件 import
+  # 路径指到仓库外（../../../scripts/chaos-helpers.mjs，helper 文件不在本仓），
+  # 属上游 sync 缺口（同 _shared/prompts/ 类），按 F-070 先例非阻塞持续暴露，
+  # 修复责任在上游 sync。
+  sdk-packages:
+    name: SDK 包测试（${{ matrix.pkg }}）
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - pkg: typescript
+            run: npm test
+          - pkg: openclaw
+            run: npm test
+          - pkg: setup-cli
+            run: npm test
+          - pkg: browser-extension
+            run: node --test test/rulepack-signature.test.mjs test/rulepack-match.test.mjs test/rulepack-sign-interop.test.mjs
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install dependencies
+        working-directory: ${{ matrix.pkg }}
+        run: npm ci
+      - name: Tests（阻塞门禁）
+        working-directory: ${{ matrix.pkg }}
+        run: ${{ matrix.run }}
+      - name: Known sync-gap suite（非阻塞 · 持续暴露）
+        if: matrix.pkg == 'browser-extension'
+        working-directory: browser-extension
+        continue-on-error: true
+        run: node --test test/chaos-daemon.test.mjs
+      - name: Manifest lint（browser-extension）
+        if: matrix.pkg == 'browser-extension'
+        working-directory: browser-extension
+        run: npm run lint:manifest
+      - name: Job summary
+        if: always()
+        run: |
+          {
+            echo "## SDK 包 ${{ matrix.pkg }}"
+            echo '```'
+            echo "pkg=${{ matrix.pkg }} run=${{ matrix.run }}"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
