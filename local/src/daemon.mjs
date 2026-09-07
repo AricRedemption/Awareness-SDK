@@ -87,6 +87,12 @@ import {
 import { remember as rememberEngine } from './daemon/engine/remember.mjs';
 import { onSessionEnd as onSessionEndHook } from './daemon/parametric-hooks.mjs';
 import {
+  loadSessionMetadata,
+  saveSessionMetadata,
+  setSessionMetadata,
+  getSessionMetadata,
+} from './daemon/session-metadata.mjs';
+import {
   initWorkspaceScanner as initWorkspaceScannerImpl,
   triggerScan as triggerScanImpl,
   triggerGraphEmbedding as triggerGraphEmbeddingImpl,
@@ -200,6 +206,11 @@ export class AwarenessLocalDaemon {
     // Set via setParametricBroker(). When attached and config switches
     // are on, record/conflict/session-end hooks fire (all default off).
     this._parametricBroker = null;
+
+    // P2-1 · session→metadata store (F-075): lazy-loaded from
+    // <awarenessDir>/session-metadata.json on first setSessionMetadata().
+    // Carries e.g. parametric_snapshot_path for later migration lookup.
+    this._sessionMetadata = null;
   }
 
   // -----------------------------------------------------------------------
@@ -212,6 +223,33 @@ export class AwarenessLocalDaemon {
    */
   setParametricBroker(broker) {
     this._parametricBroker = broker || null;
+  }
+
+  /**
+   * P2-1 · Record one metadata key for a session (F-075).
+   * Persists to <awarenessDir>/session-metadata.json. Never throws —
+   * metadata is a pointer aid; failures degrade to a DEBUG warning.
+   */
+  setSessionMetadata(sessionId, key, value) {
+    try {
+      if (!this._sessionMetadata) {
+        this._sessionMetadata = loadSessionMetadata(this.awarenessDir);
+      }
+      setSessionMetadata(this._sessionMetadata, sessionId, key, value);
+      saveSessionMetadata(this.awarenessDir, this._sessionMetadata);
+    } catch (err) {
+      if (process.env.DEBUG) {
+        console.warn('[awareness-local] session metadata save failed:', err.message);
+      }
+    }
+  }
+
+  /** Read all metadata for a session (null when none). */
+  getSessionMetadata(sessionId) {
+    if (!this._sessionMetadata) {
+      this._sessionMetadata = loadSessionMetadata(this.awarenessDir);
+    }
+    return getSessionMetadata(this._sessionMetadata, sessionId);
   }
 
   /**

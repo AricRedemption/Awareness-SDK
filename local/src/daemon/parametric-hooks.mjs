@@ -200,9 +200,9 @@ export async function onSessionEnd(daemon) {
     const snapshotPath = path.join(snapshotDir, `${sessionId}.json`);
     fs.writeFileSync(snapshotPath, JSON.stringify(snapshot, null, 2));
 
-    // Record the path in session metadata if the daemon supports it.
-    if (typeof daemon._setSessionMetadata === 'function') {
-      daemon._setSessionMetadata(sessionId, 'parametric_snapshot_path', snapshotPath);
+    // Record the path in session metadata (F-075: real store on daemon).
+    if (typeof daemon.setSessionMetadata === 'function') {
+      daemon.setSessionMetadata(sessionId, 'parametric_snapshot_path', snapshotPath);
     }
 
     if (process.env.DEBUG) console.log('[parametric-hooks] snapshot saved:', snapshotPath);
