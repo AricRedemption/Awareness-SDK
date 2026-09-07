@@ -254,3 +254,88 @@ test('P2-0 · empty query + first-hop on → empty results (no broker call)', as
   const out = await engine.unifiedCascadeSearch('', { parametricFirstHop: true });
   assert.deepEqual(out, { results: [] });
 });
+
+// ------------------------------------------------------------------
+// F-074 · process-level env arming (AWARENESS_PARAMETRIC_FIRST_HOP)
+// ------------------------------------------------------------------
+
+test('F-074 · env=1 arms the first hop without opts (broker hit short-circuits)', async () => {
+  process.env.AWARENESS_PARAMETRIC_FIRST_HOP = '1';
+  try {
+    let recallCalled = false;
+    const engine = stubEngine(async () => {
+      recallCalled = true;
+      return [{ id: 'mem_1', title: 'M', summary: 's', type: 'memory' }];
+    });
+    engine._parametricBroker = mockBroker({
+      recallResult: [{ value: 'blue', score: 0.95 }],
+    });
+    const out = await engine.unifiedCascadeSearch('favorite color');
+    assert.ok(!recallCalled, 'cascade must be skipped when env arms a hit');
+    assert.equal(out.results[0].title, 'blue');
+  } finally {
+    delete process.env.AWARENESS_PARAMETRIC_FIRST_HOP;
+  }
+});
+
+test('F-074 · env unset → default off (cascade runs even with broker)', async () => {
+  delete process.env.AWARENESS_PARAMETRIC_FIRST_HOP;
+  let recallCalled = false;
+  const engine = stubEngine(async () => {
+    recallCalled = true;
+    return [{ id: 'mem_1', title: 'M', summary: 's', type: 'memory' }];
+  });
+  engine._parametricBroker = mockBroker();
+  await engine.unifiedCascadeSearch('query');
+  assert.ok(recallCalled, 'env unset must leave the default-off behaviour');
+});
+
+test('F-074 · env values other than exactly "1" stay off', async () => {
+  for (const val of ['0', 'true', 'yes', '1 ', 'on']) {
+    process.env.AWARENESS_PARAMETRIC_FIRST_HOP = val;
+    try {
+      let recallCalled = false;
+      const engine = stubEngine(async () => {
+        recallCalled = true;
+        return [{ id: 'mem_1', title: 'M', summary: 's', type: 'memory' }];
+      });
+      engine._parametricBroker = mockBroker();
+      await engine.unifiedCascadeSearch('query');
+      assert.ok(recallCalled, `env=${JSON.stringify(val)} must stay off`);
+    } finally {
+      delete process.env.AWARENESS_PARAMETRIC_FIRST_HOP;
+    }
+  }
+});
+
+test('F-074 · env=1 without broker → cascade (arming alone changes nothing)', async () => {
+  process.env.AWARENESS_PARAMETRIC_FIRST_HOP = '1';
+  try {
+    let recallCalled = false;
+    const engine = stubEngine(async () => {
+      recallCalled = true;
+      return [{ id: 'mem_1', title: 'M', summary: 's', type: 'memory' }];
+    });
+    engine._parametricBroker = null;
+    const out = await engine.unifiedCascadeSearch('query');
+    assert.ok(recallCalled, 'arming without a broker must be a no-op');
+    assert.equal(out.results[0].id, 'mem_1');
+  } finally {
+    delete process.env.AWARENESS_PARAMETRIC_FIRST_HOP;
+  }
+});
+
+test('F-074 · opts=true still wins regardless of env', async () => {
+  delete process.env.AWARENESS_PARAMETRIC_FIRST_HOP;
+  let recallCalled = false;
+  const engine = stubEngine(async () => {
+    recallCalled = true;
+    return [{ id: 'mem_1', title: 'M', summary: 's', type: 'memory' }];
+  });
+  engine._parametricBroker = mockBroker({
+    recallResult: [{ value: 'blue', score: 0.95 }],
+  });
+  const out = await engine.unifiedCascadeSearch('q', { parametricFirstHop: true });
+  assert.ok(!recallCalled, 'per-call opt-in must work independent of env');
+  assert.equal(out.results[0].title, 'blue');
+});

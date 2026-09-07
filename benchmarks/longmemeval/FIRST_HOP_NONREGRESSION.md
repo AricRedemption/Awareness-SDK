@@ -80,14 +80,18 @@ The ON comparison is therefore deferred until broker integration
 An optional stage was prepended to `unifiedCascadeSearch` in
 `local/src/core/search.mjs`. When all three conditions are met:
 
-1. `opts.parametricFirstHop === true` (explicitly enabled by the caller)
+1. First hop armed — per-call `opts.parametricFirstHop === true`, or
+   process-level `AWARENESS_PARAMETRIC_FIRST_HOP=1` (F-074; any other
+   value is off). The env surface lets `run_ab.sh` A/B runs and MCP
+   callers flip the switch without code edits.
 2. A parametric broker is attached (`setParametricBroker()` or
    `options.parametricBroker` in the constructor)
 3. The broker has an active session and returns a non-null hit
 
 …then O(1) parametric exact recall runs first and returns directly,
 skipping the E5 + FTS5 cascade. On any miss, absence, or failure, the
-existing cascade runs with zero behavioural change.
+existing cascade runs with zero behavioural change. Arming without a
+broker is a verified no-op (unit-locked).
 
 The switch defaults **off**. With it off, no broker, or no snapshot,
 the cascade is bit-identical to the pre-change code path — now verified

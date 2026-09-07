@@ -20,5 +20,7 @@
 | [F-071](F-071-gate-text-vs-substance.md) | §3 字面门禁 vs §5 实质非回归：同环境基线 + A/B 零回归证据双条件（**提案**，待上游裁决） | Proposed | 2026-09-06 |
 | [F-072](F-072-trace-phase2-sampling-and-transport-error.md) | trace 二期：采样/频控（min-interval，错误事件永不采样）+ `transport_error` 词表扩展 7→8 | Proposed | 2026-09-07 |
 | [F-073](F-073-claims-evidence-mapping.md) | 主张-证据显式映射文件（CLAIMS.md 模式）：声明式 lint + 撤回生命周期 | Proposed | 2026-09-07 |
+| [F-074](F-074-first-hop-env-surface.md) | 首跳开关的过程级 env 表面（AWARENESS_PARAMETRIC_FIRST_HOP，默认关） | Accepted | 2026-09-07 |
+| [F-075](F-075-session-metadata-store.md) | 会话元数据存储——补全 P2-1 快照路径承诺；trace 携带真实会话 id | Accepted | 2026-09-07 |
 
 新决策：复制任一文件的五节骨架，编号递增，同步更新本表。

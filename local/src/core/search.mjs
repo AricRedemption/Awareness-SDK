@@ -477,17 +477,25 @@ export class SearchEngine {
     // -----------------------------------------------------------------------
     // P2-0 · Optional parametric first-hop stage.
     //
-    // When enabled (opts.parametricFirstHop === true) AND a broker session
-    // snapshot is available, try O(1) exact parametric recall BEFORE the
-    // E5+FTS5 cascade. Hit criterion is M1's ParametricMemory relative-zero
-    // threshold: |qF| ≤ 1e-5·|F| means "no binding" → miss; anything above
-    // is a genuine hit. On hit, return the parametric results directly.
-    // On miss, no-snapshot, broker-unreachable, or any failure → fall through
-    // to the existing cascade with zero behavioural change.
+    // When enabled AND a broker session snapshot is available, try O(1)
+    // exact parametric recall BEFORE the E5+FTS5 cascade. Hit criterion is
+    // M1's ParametricMemory relative-zero threshold: |qF| ≤ 1e-5·|F| means
+    // "no binding" → miss; anything above is a genuine hit. On hit, return
+    // the parametric results directly. On miss, no-snapshot,
+    // broker-unreachable, or any failure → fall through to the existing
+    // cascade with zero behavioural change.
     //
-    // The switch defaults OFF. E5/SQLite channels are never touched.
+    // Arming surfaces (F-074): per-call `opts.parametricFirstHop === true`,
+    // or the process-level `AWARENESS_PARAMETRIC_FIRST_HOP=1` env so A/B
+    // benchmark runs (run_ab.sh) and MCP callers can flip without code
+    // edits. Both default OFF; anything other than exactly '1' is off.
+    // Even when armed, the stage no-ops without an attached broker
+    // (_parametricBroker), so arming alone cannot change behaviour.
+    // E5/SQLite channels are never touched.
     // -----------------------------------------------------------------------
-    if (opts.parametricFirstHop === true && this._parametricBroker) {
+    const firstHopArmed = opts.parametricFirstHop === true
+      || process.env.AWARENESS_PARAMETRIC_FIRST_HOP === '1';
+    if (firstHopArmed && this._parametricBroker) {
       try {
         const hopResults = await this._parametricFirstHop(query, limit);
         if (hopResults !== null) {
