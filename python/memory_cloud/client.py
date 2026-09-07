@@ -184,8 +184,14 @@ class MemoryCloudClient:
         status: Optional[int] = None,
         t0: Optional[float] = None,
         trace_id: Optional[str] = None,
+        session_id: Optional[str] = None,
     ) -> None:
-        """F-072: transport failures are evidence — emit, never throw."""
+        """F-072: transport failures are evidence — emit, never throw.
+
+        session_id is passed when the caller knows it (record/chat flows), so
+        failure evidence attributes to the same session axis as recall/write
+        success events; genuinely session-less endpoints (list/get/…) omit it.
+        """
         try:
             latency = (time.perf_counter() - t0) * 1000.0 if t0 is not None else None
             log_transport_error(
@@ -196,6 +202,7 @@ class MemoryCloudClient:
                 status=status,
                 latency_ms=latency,
                 trace_id=trace_id,
+                session_id=session_id,
             )
         except Exception:
             pass
@@ -215,6 +222,10 @@ class MemoryCloudClient:
         method_u = method.upper()
         if path.endswith("/retrieve"):
             return "retrieve"
+        if path.endswith("/mcp/events"):
+            return "ingest_events"
+        if path.endswith("/insights/submit"):
+            return "submit_insights"
         if path.endswith("/chat"):
             return "chat"
         if path.endswith("/timeline"):
@@ -295,6 +306,7 @@ class MemoryCloudClient:
                 route="daemon",
                 error_class=self._classify_transport_exc(exc),
                 t0=t0,
+                session_id=args.get("session_id"),
             )
             raise MemoryCloudError("LOCAL_DAEMON_ERROR", f"Daemon RPC failed: {exc}") from exc
         if response.status_code >= 400:
@@ -304,6 +316,7 @@ class MemoryCloudClient:
                 error_class="http_status",
                 status=response.status_code,
                 t0=t0,
+                session_id=args.get("session_id"),
             )
             raise MemoryCloudError(
                 "LOCAL_DAEMON_ERROR",
@@ -715,6 +728,7 @@ class MemoryCloudClient:
             path=f"/memories/{memory_id}/chat",
             json_payload=payload,
             trace_id=trace_id,
+            session_id=session_id,
         )
         return self._attach_trace(data, resolved_trace)
 
@@ -871,6 +885,7 @@ class MemoryCloudClient:
                     user_id=resolved_user_id or None,
                     agent_role=resolved_agent_role or None,
                     trace_id=trace_id,
+                    session_id=active_session,
                 )
                 result["ingest"] = ingest_result
                 result["events_sent"] = len(capped)
@@ -891,6 +906,7 @@ class MemoryCloudClient:
                 agent_role=resolved_agent_role or None,
                 trace_id=trace_id,
             )
+            # session context already reaches _submit_insights via its param
             result["insights"] = insights_result
             if insights_result.get("trace_id") and "trace_id" not in result:
                 result["trace_id"] = insights_result["trace_id"]
@@ -954,6 +970,7 @@ class MemoryCloudClient:
         user_id: Optional[str] = None,
         insights: Optional[Dict[str, Any]] = None,
         trace_id: Optional[str] = None,
+        session_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         payload: Dict[str, Any] = {
             "memory_id": memory_id,
@@ -979,6 +996,7 @@ class MemoryCloudClient:
             path="/mcp/events",
             json_payload=payload,
             trace_id=trace_id,
+            session_id=session_id,
         )
         return self._attach_trace(data, resolved_trace_id)
 
@@ -1262,6 +1280,7 @@ class MemoryCloudClient:
             path=f"/memories/{memory_id}/insights/submit",
             json_payload=payload,
             trace_id=trace_id,
+            session_id=session_id,
         )
         return self._attach_trace(data, resolved_trace)
 
@@ -1930,6 +1949,7 @@ class MemoryCloudClient:
         trace_id: Optional[str] = None,
         idempotency_key: Optional[str] = None,
         extra_headers: Optional[Dict[str, str]] = None,
+        session_id: Optional[str] = None,
     ) -> Tuple[Dict[str, Any], Optional[str]]:
         response, resolved_trace = self._request_response(
             method=method,
@@ -1939,6 +1959,7 @@ class MemoryCloudClient:
             trace_id=trace_id,
             idempotency_key=idempotency_key,
             extra_headers=extra_headers,
+            session_id=session_id,
         )
         payload = self._decode_json(response)
         if not isinstance(payload, dict):
@@ -1953,6 +1974,7 @@ class MemoryCloudClient:
         params: Optional[Dict[str, Any]] = None,
         trace_id: Optional[str] = None,
         idempotency_key: Optional[str] = None,
+        session_id: Optional[str] = None,
     ) -> Tuple[Any, Optional[str]]:
         response, resolved_trace = self._request_response(
             method=method,
@@ -1961,6 +1983,7 @@ class MemoryCloudClient:
             params=params,
             trace_id=trace_id,
             idempotency_key=idempotency_key,
+            session_id=session_id,
         )
         return self._decode_json(response), resolved_trace
 
@@ -1974,6 +1997,7 @@ class MemoryCloudClient:
         idempotency_key: Optional[str] = None,
         stream: bool = False,
         extra_headers: Optional[Dict[str, str]] = None,
+        session_id: Optional[str] = None,
     ) -> Tuple[requests.Response, Optional[str]]:
         url = f"{self.base_url}{path}"
         headers = self._headers(trace_id=trace_id, idempotency_key=idempotency_key)
@@ -2002,6 +2026,7 @@ class MemoryCloudClient:
                         op=op, route="cloud",
                         error_class=self._classify_transport_exc(exc),
                         t0=t0, trace_id=trace_id,
+                        session_id=session_id,
                     )
                     raise MemoryCloudError("NETWORK_ERROR", str(exc)) from exc
                 self._sleep(attempt)
@@ -2015,6 +2040,7 @@ class MemoryCloudClient:
                 self._trace_transport_error(
                     op=op, route="cloud", error_class="http_status",
                     status=response.status_code, t0=t0, trace_id=resolved_trace_id,
+                    session_id=session_id,
                 )
                 raise self._build_error(response, resolved_trace_id)
 

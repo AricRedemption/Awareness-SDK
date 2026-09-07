@@ -131,3 +131,87 @@ def _response(status, body=None, text=""):
     resp._content = (text or json.dumps(body if body is not None else {})).encode()
     resp.headers["Content-Type"] = "application/json"
     return resp
+
+
+# ------------------------------------------------------------------
+# session_id attribution on transport errors (record/chat flows)
+# ------------------------------------------------------------------
+
+
+def test_cloud_record_failure_carries_session_id(tmp_path):
+    client, path = _client(tmp_path)
+    failing = requests.Session()
+
+    def raise_connect(*a, **kw):
+        raise requests.exceptions.ConnectionError("refused")
+
+    failing.request = raise_connect
+    client.session = failing
+    with pytest.raises(MemoryCloudError):
+        client.record("m1", content="hello", session_id="sess-rec-1")
+    rows = _rows(path)
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["event"] == "transport_error"
+    assert row["op"] == "ingest_events"
+    assert row["session_id"] == "sess-rec-1"
+
+
+def test_daemon_record_failure_carries_session_id_from_args(tmp_path):
+    client, path = _client(tmp_path, mode="local")
+    failing = requests.Session()
+
+    def raise_connect(*a, **kw):
+        raise requests.exceptions.ConnectionError("daemon down")
+
+    failing.post = raise_connect
+    client.session = failing
+    with pytest.raises(MemoryCloudError):
+        client.call_local_daemon("awareness_record", {"content": "c", "session_id": "sess-d-1"})
+    assert _rows(path)[0]["session_id"] == "sess-d-1"
+
+
+def test_chat_failure_carries_session_id(tmp_path):
+    client, path = _client(tmp_path)
+    failing = requests.Session()
+
+    def raise_timeout(*a, **kw):
+        raise requests.exceptions.Timeout("too slow")
+
+    failing.request = raise_timeout
+    client.session = failing
+    with pytest.raises(MemoryCloudError):
+        client.chat("m1", "q", session_id="sess-chat-1")
+    row = _rows(path)[0]
+    assert row["op"] == "chat"
+    assert row["session_id"] == "sess-chat-1"
+
+
+def test_sessionless_ops_keep_client_prefix_session(tmp_path):
+    # F-075 override semantics: session-less endpoints keep the envelope's
+    # client-prefix session (no memory-session override), so a real session id
+    # in a transport_error row always means the op knew its session.
+    client, path = _client(tmp_path)
+    failing = requests.Session()
+
+    def raise_connect(*a, **kw):
+        raise requests.exceptions.ConnectionError("refused")
+
+    failing.request = raise_connect
+    client.session = failing
+    with pytest.raises(MemoryCloudError):
+        client.list_memories()
+    row = _rows(path)[0]
+    assert row["session_id"] == "sdk"  # client prefix, NOT a memory session
+
+
+def test_op_classifier_endpoints():
+    # F-072 op labels must stay content-free and cover the session-bearing
+    # endpoints; direct table so new endpoints cannot silently fall to "http".
+    f = MemoryCloudClient._op_from_request
+    assert f("POST", "/api/v1/mcp/events") == "ingest_events"
+    assert f("POST", "/api/v1/memories/m1/insights/submit") == "submit_insights"
+    assert f("POST", "/api/v1/memories/m1/retrieve") == "retrieve"
+    assert f("POST", "/api/v1/memories/m1/content") == "write"
+    assert f("GET", "/api/v1/memories") == "list_memories"
+    assert f("GET", "/api/v1/whatever") == "http"

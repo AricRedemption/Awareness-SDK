@@ -27,6 +27,12 @@
 - **close() 冲刷**（2026-09-08 验收补充）：run 结束窗口内的 pending
   `_suppressed_count` 由 close() 以终行冲刷（绕过频控门——冲刷行若落在
   自己的窗口内会被门拦掉）；幂等、never-raise。停机不再丢量级信息。
+- **session_id 贯通**（2026-09-08 验收补充）：record/ingest/chat/insights
+  等会话感知流程的 transport_error 携带真实 session_id（信封覆写语义，
+  与 7072b9b 的成功路径同轴可归因）；无会话端点（list/get 等）保持
+  client 前缀不被覆写——transport_error 行出现真实 session id 即代表
+  该操作知道自己的会话。daemon recall 不携带（F-053 单参数面下会话由
+  daemon 服务端分配，客户端不可知）。
 
 ## 背景
 
