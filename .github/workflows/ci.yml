@@ -12,10 +12,15 @@ on:
   pull_request:
   push:
     branches: [main]
+  workflow_dispatch: {}
+
+# OpenSSF Scorecard Token-Permissions：workflow token 最小权限（只读）。
+permissions:
+  contents: read
 
 jobs:
   python-tests:
-    name: Python 全量测试（含 trace 19 例）
+    name: Python 全量测试（含 trace 套件）
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -23,7 +28,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install test dependencies
-        run: pip install pytest requests pydantic numpy
+        run: pip install pytest==9.1.1 requests==2.34.2 pydantic==2.13.5 numpy==2.5.3
         # numpy: _dev_stubs/parametric_memory.py (contract-test stub) uses it
       - name: Import + trace smoke test
         working-directory: python
@@ -53,17 +58,25 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Check claims register
+      - name: Check claims register (GOVERNANCE §7 + CLAIMS.md, F-070/F-073)
         run: |
           set -o pipefail
           python3 scripts/check_claims.py --verbose | tee /tmp/claims-out.txt
+      - name: Check ADR index consistency (F-071 事故教训的谱系 lint)
+        run: |
+          set -o pipefail
+          python3 scripts/check_adr_index.py | tee /tmp/adr-out.txt
       - name: Job summary
         if: always()
         run: |
           {
-            echo "## 主张登记簿校验（GOVERNANCE §7）"
+            echo "## 主张登记簿校验（GOVERNANCE §7 + CLAIMS.md）"
             echo '```'
             tail -n 12 /tmp/claims-out.txt 2>/dev/null || echo "(无输出)"
+            echo '```'
+            echo "## ADR 索引一致性"
+            echo '```'
+            tail -n 6 /tmp/adr-out.txt 2>/dev/null || echo "(无输出)"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
