@@ -6,7 +6,8 @@
 
 - [ ] 全量测试绿：Python `pytest`（python/）与 `node --test`（local/）既有套件无回归
 - [ ] 本 PR **未**改动 `local/src/core/search.mjs` 的 `unifiedCascadeSearch`
-      （若改动了：必须附 LongMemEval 产物，R@5 ≥ 96.0。当前状态：____）
+      （若改动了：必须附 LongMemEval **双条件**证据（F-071）：(a) R@5 不低于关闭态同环境基线
+      (b) 零回归证据（500 题 A/B 逐题等价或同等级）。当前状态：____）
 - [ ] 本 PR 新增/改动的参数化能力**默认关**，且关闭态与改动前逐位一致（有回归测试锁定）
 - [ ] 文档与 PR 描述中**无未实测的提升主张**（数字主张已登记 GOVERNANCE.md §7 或标注出处）
 - [ ] 未反向 import M1 源码（只经 `mt_lnn.memory_broker` 包）
