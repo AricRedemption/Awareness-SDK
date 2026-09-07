@@ -6,21 +6,23 @@
 ----
 把 GOVERNANCE.md §7「主张登记簿」的人眼纪律变成可机械执行的 lint（可挂 CI）：
 扫描对外主张面 README 中的数字主张（百分比、分数/计数），逐条判定其是否
-① 已登记于 §7（allowlist），或 ② 行内/表格上下文带出处标注。两者皆无 → 违规。
+① 已登记于 §7 / CLAIMS.md（allowlist），或 ② 行内/表格上下文带出处标注。
+两者皆无 → 违规。
 
-为什么需要
-----------
-GOVERNANCE §7：「本表是对外数字主张的唯一合法来源。任何 README、文档、PR 描述
-中出现的数字主张，若不在本表（或其指向的产物文件）中，即违规。」§3 门禁第 3 条：
-「一切文档 → 禁止未实测的提升主张。数字只能来自脚本产物，能被一键复算。」
-此前该纪律只靠 code review 人眼维持；本脚本把它机械化：有违规 exit 1，CI 直接红。
+F-073（CLAIMS.md 模式，2026-09-08 采纳）叠加的机械检查：
+- **§7↔CLAIMS 对账**：§7 与 CLAIMS.md Active 区的数字集合必须一致（先登记
+  后引用 = 两处同时登记；只改其一 exit 1）；
+- **撤回复活检测**：CLAIMS.md Withdrawn/Superseded 区的数字再出现在对外
+  README → exit 1（无论是否带出处，撤回纪律机械化）；
+- **时效警告**：Active 主张「最后核实」超 90 天 → stale 警告（对标 eslint
+  CLAIMS.md 的 verification-pending 横幅纪律）。
 
 判定规则（逐行，仅扫描代码围栏外的正文/表格/HTML）
 --------------------------------------------------
 1. 主张识别：行内含百分比（``96.0%``，含徽章 URL 编码形式 ``96.0%25``）或
    分数/计数（``480/500``）即视为数字主张行。
 2. 合规当且仅当（满足其一）：
-   a. 行内数字全部登记于 §7 表格（数值等价比较：96 与 96.0 等同）；
+   a. 行内数字全部登记于 §7 表格或 CLAIMS.md Active 行（数值等价集合）；
    b. 该行带出处标注：markdown 链接 ``[..](http..)``、非本机 URL、HTML href、
       或「出处」字样；
    c. 该行是 markdown 表格行，且行内出现第三方系统名（Mem0/Zep/MemPalace 等
@@ -29,21 +31,19 @@ GOVERNANCE §7：「本表是对外数字主张的唯一合法来源。任何 RE
       对比表即此形态：表尾 ``> Honest comparisons only — see [..](..)``）。
 3. 豁免（有意为之，非放松）：
    - 代码围栏内（```` ``` ````）的行：ASCII 渲染的基准产物输出、示例命令/配置，
-     不是作者行文主张；证据本体是 §7 产物列指向的文件（results_*.json、
-     FIRST_HOP_NONREGRESSION.md）。--verbose 会列出围栏内识别到的数字以供审计。
-   - 行内代码 span（`` `...` ``）与 HTML 布局属性（width/height/style，
-     如 ``width="100%"``）：非主张载体。
-   - §7 产物/依据列指向的文件本身整体豁免（它们就是证据），若将来加入扫描列表。
-4. 退出码：0 = 全部合规；1 = 存在未登记且无出处的数字主张；2 = GOVERNANCE.md
-   缺失，或 §7 标题/登记表不存在。
+     不是作者行文主张；证据本体是 §7/CLAIMS 产物列指向的文件。--verbose 会列
+     出围栏内识别到的数字以供审计。
+   - 行内代码 span（`` `...` ``）与 HTML 布局属性（width/height/style）。
+   - §7/CLAIMS 产物/依据列指向的文件本身整体豁免（它们就是证据）。
+4. 退出码：0 = 全部合规；1 = 存在违规（未登记主张 / 撤回复活 / §7↔CLAIMS
+   不一致）；2 = GOVERNANCE.md 或 CLAIMS.md 缺失、§7 标题/登记表不存在。
 
 如何登记新主张
 --------------
-改 GOVERNANCE.md §7 表格，新增一行「主张 | 状态 | 复现命令 | 产物/依据」：
-表格行内的百分比、``a/b`` 分数与独立数值（如 96.0、95.8、500Q 的 500）会被本
-脚本自动并入 allowlist；产物列里的文件路径自动获得整体豁免。反向不可行：
-只改 README 不登记 → 本脚本 exit 1。单字符数字（R@5 的 5、版本号、日期）不进
-allowlist（碰撞面太大）；若确需登记请在表中写成百分比或分数形式。
+双登记：① 改 GOVERNANCE.md §7 表格新增一行；② 在 CLAIMS.md Active 区新增
+C-xxx 行（数字列写全等价写法，附证据锚点/复现命令/最后核实日期）。两处数字
+集合不一致 → 本脚本 exit 1。单字符数字（R@5 的 5、版本号、日期）不入
+allowlist（碰撞面太大）。
 
 用法
 ----
@@ -63,6 +63,8 @@ from pathlib import Path
 # --------------------------------------------------------------- configuration
 
 GOVERNANCE_FILENAME = "GOVERNANCE.md"
+CLAIMS_FILENAME = "CLAIMS.md"
+STALENESS_DAYS = 90  # eslint CLAIMS.md 模式：超 90 天未核实 = stale 警告
 
 # 对外主张面（存在才扫）。新增对外 README 时在此登记。
 SCAN_TARGETS = (
@@ -187,6 +189,51 @@ def extract_product_paths(rows: list[str]) -> set[str]:
     return paths
 
 
+# -------------------------------------------------------------- CLAIMS.md 解析（F-073）
+
+CLAIM_ID_RE = re.compile(r"^C-\d{3,}$")
+CLAIMS_SECTION_RE = re.compile(r"^##\s+(Active|Withdrawn|Superseded)\s*$")
+
+
+def parse_claims_md(path: Path) -> dict:
+    """解析 CLAIMS.md → {active/withdrawn/superseded: [row-dict]}。
+
+    row-dict: {id, numbers:set[float], last_verified: date|None, raw}.
+    占位行（id 非 C-xxx）与表头/分隔行自动跳过。
+    """
+    import datetime as _dt
+
+    sections: dict[str, list[dict]] = {"Active": [], "Withdrawn": [], "Superseded": []}
+    current: str | None = None
+    for ln in path.read_text(encoding="utf-8").splitlines():
+        m = CLAIMS_SECTION_RE.match(ln)
+        if m:
+            current = m.group(1)
+            continue
+        if current is None or not ln.lstrip().startswith("|"):
+            continue
+        if TABLE_SEP_RE.match(ln):
+            continue
+        cells = [c.strip() for c in ln.split("|")]
+        cid = cells[1].strip() if len(cells) > 1 else ""
+        if not CLAIM_ID_RE.match(cid):
+            continue  # 表头行 / （暂无）占位行
+        dates = DATE_RE.findall(ln)
+        last_verified = None
+        if dates:
+            y, mo, d = (int(x) for x in dates[-1].split("-"))
+            last_verified = _dt.date(y, mo, d)
+        sections[current].append(
+            {
+                "id": cid,
+                "numbers": extract_allowlist([ln]),
+                "last_verified": last_verified,
+                "raw": ln,
+            }
+        )
+    return sections
+
+
 # -------------------------------------------------------------- 主张识别与判定
 
 def detect_claims(line: str) -> list[dict]:
@@ -258,7 +305,10 @@ def is_product_file(rel: str, products: set[str]) -> bool:
 
 # --------------------------------------------------------------------- 扫描
 
-def scan_file(path: Path, rel: str, allowlist: set[float], products: set[str]) -> dict:
+def scan_file(
+    path: Path, rel: str, allowlist: set[float], products: set[str],
+    retracted: set[float] | None = None,
+) -> dict:
     text = path.read_text(encoding="utf-8")
     lines = text.splitlines()
     blocks = table_blocks(lines)
@@ -310,9 +360,10 @@ def scan_file(path: Path, rel: str, allowlist: set[float], products: set[str]) -
         for c in claims:
             unregistered = [n for n in c["numbers"] if n not in allowlist]
             allowlisted = not unregistered
+            revived = [n for n in c["numbers"] if retracted and n in retracted]
             reasons = []
             if allowlisted:
-                reasons.append("已登记于 §7")
+                reasons.append("已登记于 §7/CLAIMS")
             if cited:
                 reasons.append("行内出处（链接/出处标记）")
             if third_party:
@@ -329,6 +380,18 @@ def scan_file(path: Path, rel: str, allowlist: set[float], products: set[str]) -
                         "raw": raw,
                         "claim": c,
                         "unregistered": unregistered,
+                    }
+                )
+            if revived:
+                # F-073 撤回复活：无论是否带出处，撤回数字不得再出现在对外 README
+                violations.append(
+                    {
+                        "file": rel,
+                        "lineno": idx + 1,
+                        "raw": raw,
+                        "claim": c,
+                        "unregistered": [],
+                        "retracted": revived,
                     }
                 )
             ledger.append(
@@ -387,11 +450,61 @@ def main(argv: list[str] | None = None) -> int:
     allowlist = extract_allowlist(rows)
     products = extract_product_paths(rows)
 
-    print("check_claims — GOVERNANCE §7 主张登记簿机械校验")
+    # ---- F-073: CLAIMS.md 解析与 §7↔CLAIMS 对账
+    claims_path = root / CLAIMS_FILENAME
+    if not claims_path.is_file():
+        print(f"[FATAL] {claims_path} 不存在：F-073 已采纳，主张-证据映射文件为必需品", file=sys.stderr)
+        return 2
+    claims = parse_claims_md(claims_path)
+
+    all_ids = [r["id"] for sec in claims.values() for r in sec]
+    dupes = sorted({i for i in all_ids if all_ids.count(i) > 1})
+    s7_numbers = allowlist
+    claims_active_numbers: set[float] = set()
+    for r in claims["Active"]:
+        claims_active_numbers |= r["numbers"]
+    claims_all_numbers: set[float] = set()
+    for sec in claims.values():
+        for r in sec:
+            claims_all_numbers |= r["numbers"]
+
+    consistency_failures: list[str] = []
+    if dupes:
+        consistency_failures.append(f"claim-id 重复: {dupes}")
+    missing_in_claims = sorted(s7_numbers - claims_all_numbers)
+    if missing_in_claims:
+        consistency_failures.append(
+            f"§7 数字未映射到 CLAIMS.md（双登记缺失）: {fmt_nums(missing_in_claims)}"
+        )
+    missing_in_s7 = sorted(claims_active_numbers - s7_numbers)
+    if missing_in_s7:
+        consistency_failures.append(
+            f"CLAIMS Active 数字未登记于 §7（双登记缺失）: {fmt_nums(missing_in_s7)}"
+        )
+
+    # 撤回复活检测集：Withdrawn/Superseded 的数字（扣除仍 Active 的——同数字
+    # 被新主张重新登记时不再视为撤回面）
+    retracted = (claims_all_numbers - claims_active_numbers) | set()
+    for r in claims["Active"]:
+        retracted -= {n for n in r["numbers"]}
+
+    print("check_claims — GOVERNANCE §7 + CLAIMS.md 主张登记机械校验（F-070/F-073）")
     print(f"  登记簿: {gov_path} （{len(rows)} 行登记）")
-    print(f"  §7 allowlist: {sorted(allowlist)}")
+    active_n = len(claims["Active"])
+    wd_n, sp_n = len(claims["Withdrawn"]), len(claims["Superseded"])
+    print(f"  CLAIMS: {claims_path} （active {active_n} / withdrawn {wd_n} / superseded {sp_n}）")
+    print(f"  allowlist: {sorted(allowlist)}")
     if products:
-        print(f"  §7 产物豁免: {sorted(products)}")
+        print(f"  产物豁免: {sorted(products)}")
+
+    # ---- F-073: 90 天时效警告（不阻断，对标 eslint verification-pending 横幅）
+    import datetime as _dt
+    today = _dt.date.today()
+    for r in claims["Active"]:
+        lv = r["last_verified"]
+        if lv is not None and (today - lv).days > STALENESS_DAYS:
+            print(f"  [STALE] {r['id']} 最后核实 {lv}（{(today - lv).days} 天前）"
+                  f"——引用前必须复跑复现命令刷新")
 
     results = []
     for rel in SCAN_TARGETS:
@@ -402,7 +515,7 @@ def main(argv: list[str] | None = None) -> int:
         if is_product_file(rel, products):
             print(f"  [skip] {rel}（§7 产物/依据指向的文件，整体豁免）")
             continue
-        results.append(scan_file(f, rel, allowlist, products))
+        results.append(scan_file(f, rel, allowlist, products, retracted=retracted))
 
     total_claims = sum(len(r["ledger"]) for r in results)
     total_fail = sum(len(r["violations"]) for r in results)
@@ -425,19 +538,44 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"\n扫描 {len(results)} 个主张面文件，识别主张 {total_claims} 条。")
 
-    if total_fail:
-        print(f"\n违规 {total_fail} 条（未登记于 §7 且无出处）：")
-        for r in results:
-            for v in r["violations"]:
-                c = v["claim"]
-                print(f"  {v['file']}:{v['lineno']}  {c['kind']} \"{c['text']}\""
-                      f"（未登记数字: {fmt_nums(v['unregistered'])}）")
-                print(f"      | {v['raw'].strip()[:120]}")
-        print("\n处理方式：将数字登记进 GOVERNANCE.md §7（附复现命令与产物），"
-              "或删除该主张，或补充出处链接。")
+    if consistency_failures:
+        print("\n§7↔CLAIMS 一致性违规（F-073 双登记）：")
+        for msg in consistency_failures:
+            print(f"  - {msg}")
+        print("\n处理方式：在 GOVERNANCE.md §7 与 CLAIMS.md Active 区同时登记"
+              "（数字列写全等价写法），或从两处同时移除。")
         return 1
 
-    print("PASS: 全部数字主张已登记于 §7 或带出处标注。")
+    if total_fail:
+        unreg = [v for r in results for v in r["violations"] if "retracted" not in v]
+        revived = [v for r in results for v in r["violations"] if "retracted" in v]
+        if unreg:
+            print(f"\n违规 {len(unreg)} 条（未登记于 §7/CLAIMS 且无出处）：")
+            for r in results:
+                for v in r["violations"]:
+                    if "retracted" in v:
+                        continue
+                    c = v["claim"]
+                    print(f"  {v['file']}:{v['lineno']}  {c['kind']} \"{c['text']}\""
+                          f"（未登记数字: {fmt_nums(v['unregistered'])}）")
+                    print(f"      | {v['raw'].strip()[:120]}")
+        if revived:
+            print(f"\n撤回主张复活 {len(revived)} 条（F-073：Withdrawn/Superseded 数字"
+                  "不得再出现在对外 README）：")
+            for r in results:
+                for v in r["violations"]:
+                    if "retracted" not in v:
+                        continue
+                    c = v["claim"]
+                    print(f"  {v['file']}:{v['lineno']}  {c['kind']} \"{c['text']}\""
+                          f"（撤回数字: {fmt_nums(v['retracted'])}）")
+                    print(f"      | {v['raw'].strip()[:120]}")
+        print("\n处理方式：将数字双登记进 GOVERNANCE.md §7 与 CLAIMS.md（附复现命令"
+              "与产物），或删除该主张，或补充出处链接。撤回复活类：删除文案或走正式"
+              "撤回/替代流程后重新引用。")
+        return 1
+
+    print("PASS: 全部数字主张已登记（§7+CLAIMS 双登记一致），无撤回复活。")
     return 0
 
 

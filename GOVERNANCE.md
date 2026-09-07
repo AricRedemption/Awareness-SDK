@@ -71,13 +71,15 @@ docs/decisions/（MADR 决策记录，谱系） ◀── python/memory_cloud/tr
 
 **本表是对外数字主张的唯一合法来源。** 任何 README、文档、PR 描述中出现的数字主张，若不在本表（或其指向的产物文件）中，即违规。格式沿用 M1 RESULTS.md 纪律：每条主张绑定复现命令与产物。
 
+机读映射见根目录 [CLAIMS.md](CLAIMS.md)（F-073）：每行以 claim-id（C-xxx）双登记，`scripts/check_claims.py` 强制 §7↔CLAIMS 数字集合一致并检测撤回复活。**新主张双登记，缺一 exit 1。**
+
 | 主张 | 状态 | 复现命令 | 产物/依据 |
 |---|---|---|---|
-| LongMemEval R@5 同环境基线（关闭首跳） | 本环境复测 95.8（479/500），2026-09-06；fork/main 同环境同值，0.2pp 为环境漂移（transformers.js 版本差） | `node run_f053_daemon_path.mjs`（benchmarks/longmemeval/，500Q，数据集见该文件头） | `benchmarks/longmemeval/FIRST_HOP_NONREGRESSION.md` + `results_f053_daemon_path_n500_base-forkmain.json` |
-| Published 基线 96.0（480/500）为 Awareness-Market 标准环境（2026-08）目标 | 参考目标，follow-up（跨环境数字不作绝对门禁，F-071） | 须在 Awareness-Market 标准环境复测 | `benchmarks/longmemeval/FIRST_HOP_NONREGRESSION.md` |
-| 首跳开启后 R@5 ≥ 同环境基线 **AND** PR 零回归 | **已通过（F-071 双条件）**：本环境 95.8 与同环境 fork/main 500 题逐题 bit-identical miss set；PR #1 维持 Ready for review | 分支与对照组命令见 FIRST_HOP_NONREGRESSION.md "How to reproduce" | `benchmarks/longmemeval/results_f053_daemon_path_n500_b999000000.json`（分支）+ `results_f053_daemon_path_n500_base-forkmain.json`（对照组） |
-| 参数化层 O(1) 热区读取、精确绑定 | 设计主张（非本仓实测） | — | M1 `docs/PARAMETRIC_MEMORY.md`；本仓未独立复测，引用时须注明出处 |
-| 会话迁移 bit-exact | 单测级验证（mock broker） | `pytest tests/test_session_migrate.py` | 测试文件；真实 broker 联调后升级 |
+| LongMemEval R@5 同环境基线（关闭首跳）（CLAIMS: C-001） | 本环境复测 95.8（479/500），2026-09-06；fork/main 同环境同值，0.2pp 为环境漂移（transformers.js 版本差） | `node run_f053_daemon_path.mjs`（benchmarks/longmemeval/，500Q，数据集见该文件头） | `benchmarks/longmemeval/FIRST_HOP_NONREGRESSION.md` + `results_f053_daemon_path_n500_base-forkmain.json` |
+| Published 基线 96.0（480/500）为 Awareness-Market 标准环境（2026-08）目标（CLAIMS: C-002） | 参考目标，follow-up（跨环境数字不作绝对门禁，F-071） | 须在 Awareness-Market 标准环境复测 | `benchmarks/longmemeval/FIRST_HOP_NONREGRESSION.md` |
+| 首跳开启后 R@5 ≥ 同环境基线 **AND** PR 零回归（CLAIMS: C-003） | **已通过（F-071 双条件）**：本环境 95.8 与同环境 fork/main 500 题逐题 bit-identical miss set；PR #1 维持 Ready for review | 分支与对照组命令见 FIRST_HOP_NONREGRESSION.md "How to reproduce" | `benchmarks/longmemeval/results_f053_daemon_path_n500_b999000000.json`（分支）+ `results_f053_daemon_path_n500_base-forkmain.json`（对照组） |
+| 参数化层 O(1) 热区读取、精确绑定（CLAIMS: C-004） | 设计主张（非本仓实测） | — | M1 `docs/PARAMETRIC_MEMORY.md`；本仓未独立复测，引用时须注明出处 |
+| 会话迁移 bit-exact（CLAIMS: C-005） | 单测级验证（mock broker） | `pytest tests/test_session_migrate.py` | 测试文件；真实 broker 联调后升级 |
 
 禁止行为：在登记簿外新增提升数字；把"pending"写成"通过"；引用 M1 数字时省略出处。
 
