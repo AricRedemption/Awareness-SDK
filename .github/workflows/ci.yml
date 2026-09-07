@@ -51,7 +51,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   claims-register:
-    name: 主张登记簿校验（GOVERNANCE §7）
+    name: 主张登记簿校验（§7 + CLAIMS + ADR 索引）
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

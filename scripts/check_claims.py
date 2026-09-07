@@ -484,9 +484,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # 撤回复活检测集：Withdrawn/Superseded 的数字（扣除仍 Active 的——同数字
     # 被新主张重新登记时不再视为撤回面）
-    retracted = (claims_all_numbers - claims_active_numbers) | set()
-    for r in claims["Active"]:
-        retracted -= {n for n in r["numbers"]}
+    retracted = claims_all_numbers - claims_active_numbers
 
     print("check_claims — GOVERNANCE §7 + CLAIMS.md 主张登记机械校验（F-070/F-073）")
     print(f"  登记簿: {gov_path} （{len(rows)} 行登记）")
