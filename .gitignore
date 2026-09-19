@@ -27,3 +27,4 @@ daemon.pid
 # benchmarks/longmemeval/run_f053_daemon_path.mjs header). Result JSONs are
 # NOT ignored: they are the gate evidence artifacts (GOVERNANCE §7).
 benchmarks/longmemeval/longmemeval_s_cleaned.json
+.loop-lock
